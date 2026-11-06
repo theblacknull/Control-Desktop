@@ -13,9 +13,9 @@ fn session_lease_contender() {
         return;
     };
     if expected == "blocked" {
-        let path = format!("/tmp/agent-desktop-{}/interaction.lock", unsafe {
-            libc::geteuid()
-        });
+        let path = crate::system::interaction::interaction_lease::lock_root()
+            .join(format!("agent-desktop-{}", unsafe { libc::geteuid() }))
+            .join("interaction.lock");
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -26,7 +26,11 @@ fn session_lease_contender() {
             Err(std::fs::TryLockError::WouldBlock)
         ));
     } else {
-        acquire_unix_interaction_lease(deadline(30_000)).expect("cleanup freed the lease");
+        acquire_unix_interaction_lease(
+            deadline(30_000),
+            &crate::system::interaction::interaction_lease::lock_root(),
+        )
+        .expect("cleanup freed the lease");
     }
 }
 
@@ -44,7 +48,11 @@ fn contender(expected: &str) -> bool {
 
 #[test]
 fn a_timed_out_input_worker_keeps_other_processes_out_until_exit() {
-    let lease = acquire_unix_interaction_lease(deadline(30_000)).unwrap();
+    let lease = acquire_unix_interaction_lease(
+        deadline(30_000),
+        &crate::system::interaction::interaction_lease::lock_root(),
+    )
+    .unwrap();
     let slot = Arc::default();
     let (started, ready) = channel();
     let (finish, wait) = channel();

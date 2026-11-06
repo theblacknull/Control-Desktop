@@ -108,6 +108,7 @@ chmod 700 "${AGENT_DESKTOP_HOME:-$HOME/.agent-desktop}"
 
 Do not pre-create it with `mkdir -p` under a umask of 002.
 
-The interaction lock lives under `/tmp/agent-desktop-<uid>/`, outside the state
-root. It serializes input per user. `TIMEOUT` with `lock_timeout` and a high
+The interaction lock lives under `/run/user/<uid>/agent-desktop-<uid>/`, outside
+the state root and independent of `XDG_RUNTIME_DIR`. On a host without logind,
+where `/run/user/<uid>` does not exist, it falls back to `/tmp/agent-desktop-<uid>/`. It serializes input per user. `TIMEOUT` with `lock_timeout` and a high
 `contention_count` means another agent of the same user is driving input.

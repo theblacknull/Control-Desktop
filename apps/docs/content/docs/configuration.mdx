@@ -105,4 +105,4 @@ agent-desktop status                       # data.state_root shows this path
 - **Sessions.** `session start` creates `sessions/<id>/` with its own `snapshots/`, so one session's refs are invisible to another. `session gc` deletes ended sessions with their traces. See [Sessions](/desktop/sessions).
 - **Traces.** A tracing session writes one JSONL segment per process under `trace/`, plus `screens/` and `refmaps/` with `--screenshots`. See [Traces](/desktop/guides/traces).
 
-The cross-process interaction lock lives outside the state root (under `/tmp` on macOS and Linux), so every agent of one user shares it whatever their `AGENT_DESKTOP_HOME`. Files you name yourself, such as a `--trace` path or a screenshot path, are also outside it.
+The cross-process interaction lock lives outside the state root (in the per-user temporary directory on macOS, and in `/run/user/<uid>` on Linux, or `/tmp` where logind provides no such directory), so every agent of one user shares it whatever their `AGENT_DESKTOP_HOME`. Files you name yourself, such as a `--trace` path or a screenshot path, are also outside it.

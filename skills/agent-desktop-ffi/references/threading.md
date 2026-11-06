@@ -31,9 +31,10 @@ threads, but the snapshot can overlap the action; callers that require
 observe-then-act ordering must wait for the snapshot result before dispatching
 the action.
 
-Desktop mutations take a process-independent lock: on macOS and Linux an
-advisory lock at `/tmp/agent-desktop-<uid>/interaction.lock`, on Windows a
-token-derived lock file. CLI and FFI builds therefore serialize mutations across
+Desktop mutations take a process-independent lock: an advisory
+`agent-desktop-<uid>/interaction.lock` in the per-user temporary directory on
+macOS and in `/run/user/<uid>` on Linux (`/tmp` where logind provides no such
+directory), and a token-derived lock file on Windows. CLI and FFI builds therefore serialize mutations across
 threads, processes and different HOME values for the same user. The lock is
 command-scoped, not transaction-scoped: another actor may change the UI between
 an observation and a later action, or between two separate actions.

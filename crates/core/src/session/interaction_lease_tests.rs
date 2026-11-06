@@ -54,9 +54,9 @@ fn test_root(label: &str) -> PathBuf {
 fn a_second_lease_times_out_and_drop_releases_the_first() {
     let _test_guard = interaction_lease_test_guard();
     let root = test_root("contention");
-    let first = acquire_unix_interaction_lease_at(Deadline::after(100).unwrap(), &root).unwrap();
+    let first = acquire_unix_interaction_lease(Deadline::after(100).unwrap(), &root).unwrap();
     let deadline = Deadline::after(10).unwrap();
-    let error = match acquire_unix_interaction_lease_at(deadline, &root) {
+    let error = match acquire_unix_interaction_lease(deadline, &root) {
         Ok(_) => panic!("contended lease unexpectedly acquired"),
         Err(error) => error,
     };
@@ -69,7 +69,7 @@ fn a_second_lease_times_out_and_drop_releases_the_first() {
     );
     assert!(deadline.elapsed() < Duration::from_secs(5));
     drop(first);
-    acquire_unix_interaction_lease_at(Deadline::after(100).unwrap(), &root).unwrap();
+    acquire_unix_interaction_lease(Deadline::after(100).unwrap(), &root).unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -77,13 +77,12 @@ fn a_second_lease_times_out_and_drop_releases_the_first() {
 fn a_recovery_lease_retains_file_and_process_ownership_after_parent_drop() {
     let _test_guard = interaction_lease_test_guard();
     let root = test_root("recovery");
-    let original =
-        acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    let original = acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     let recovery = original.with_deadline(Deadline::detached_after(5_000).unwrap());
     let inherited = recovery.duplicate_inheritable_fd().unwrap();
     drop(original);
     assert!(FileLock::is_held(&interaction_lock_path_at(&root).unwrap()));
-    let error = acquire_unix_interaction_lease_at(Deadline::after(10).unwrap(), &root)
+    let error = acquire_unix_interaction_lease(Deadline::after(10).unwrap(), &root)
         .err()
         .expect("the recovery lease must retain the process guard");
     assert_eq!(
@@ -94,7 +93,7 @@ fn a_recovery_lease_retains_file_and_process_ownership_after_parent_drop() {
     drop(recovery);
     assert!(FileLock::is_held(&interaction_lock_path_at(&root).unwrap()));
     drop(inherited);
-    acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -104,7 +103,7 @@ fn subprocess_holder() {
         return;
     };
     let root = PathBuf::from(std::env::var_os("AGENT_DESKTOP_LOCK_HELPER_ROOT").unwrap());
-    let _lease = acquire_unix_interaction_lease_at(Deadline::after(5_000).unwrap(), &root).unwrap();
+    let _lease = acquire_unix_interaction_lease(Deadline::after(5_000).unwrap(), &root).unwrap();
     std::fs::write(ready_path, b"ready").unwrap();
     hold_until_parent_releases();
 }
@@ -122,7 +121,7 @@ fn subprocess_adopted_holder() {
         .parse::<RawFd>()
         .unwrap();
     let _lease =
-        adopt_inherited_unix_interaction_lease_at(raw_fd, Deadline::after(5_000).unwrap(), &root)
+        adopt_inherited_unix_interaction_lease(raw_fd, Deadline::after(5_000).unwrap(), &root)
             .unwrap();
     let filter = "session::interaction_lease::tests::subprocess_inherited_fd_is_closed";
     let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -179,14 +178,14 @@ fn different_home_subprocess_contends_and_crash_releases() {
         "subprocess did not acquire interaction lease"
     );
     let error =
-        match acquire_unix_interaction_lease_at(Deadline::after(25).unwrap(), &interaction_root) {
+        match acquire_unix_interaction_lease(Deadline::after(25).unwrap(), &interaction_root) {
             Ok(_) => panic!("different HOME subprocess bypassed interaction lock"),
             Err(error) => error,
         };
     assert_eq!(error.code, ErrorCode::Timeout);
     let _ = child.kill();
     reap_child(&mut child, Duration::from_secs(60));
-    acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &interaction_root).unwrap();
+    acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &interaction_root).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -197,7 +196,7 @@ fn inherited_descriptor_survives_parent_drop_and_crash_releases() {
     let _test_guard = interaction_lease_test_guard();
     let root = test_root("inherited");
     let ready = root.join("adopted-ready");
-    let lease = acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    let lease = acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     let inherited = lease.duplicate_inheritable_fd().unwrap();
     let mut child = std::process::Command::new(std::env::current_exe().unwrap())
         .arg("--exact")
@@ -222,13 +221,13 @@ fn inherited_descriptor_survives_parent_drop_and_crash_releases() {
     );
     drop(inherited);
     drop(lease);
-    let error = acquire_unix_interaction_lease_at(Deadline::after(25).unwrap(), &root)
+    let error = acquire_unix_interaction_lease(Deadline::after(25).unwrap(), &root)
         .err()
         .expect("adopted descriptor must retain the lease");
     assert_eq!(error.code, ErrorCode::Timeout);
     child.kill().unwrap();
     reap_child(&mut child, Duration::from_secs(60));
-    acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     std::fs::remove_dir_all(root).unwrap();
 }
 
@@ -239,7 +238,7 @@ fn inherited_descriptor_must_match_canonical_lock_identity() {
 
     let _test_guard = interaction_lease_test_guard();
     let root = test_root("inherited-mismatch");
-    let lease = acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    let lease = acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     let unrelated_path = root.join("unrelated.lock");
     let unrelated = std::fs::OpenOptions::new()
         .read(true)
@@ -249,7 +248,7 @@ fn inherited_descriptor_must_match_canonical_lock_identity() {
         .open(&unrelated_path)
         .unwrap();
     drop(lease);
-    let error = adopt_inherited_unix_interaction_lease_at(
+    let error = adopt_inherited_unix_interaction_lease(
         unrelated.as_raw_fd(),
         Deadline::after(100).unwrap(),
         &root,
@@ -266,11 +265,10 @@ fn inherited_descriptor_serializes_threads_in_one_host_process() {
 
     let _test_guard = interaction_lease_test_guard();
     let root = test_root("inherited-threads");
-    let original =
-        acquire_unix_interaction_lease_at(Deadline::after(1_000).unwrap(), &root).unwrap();
+    let original = acquire_unix_interaction_lease(Deadline::after(1_000).unwrap(), &root).unwrap();
     let inherited = original.duplicate_inheritable_fd().unwrap();
     drop(original);
-    let first = adopt_inherited_unix_interaction_lease_at(
+    let first = adopt_inherited_unix_interaction_lease(
         inherited.as_raw_fd(),
         Deadline::after(1_000).unwrap(),
         &root,
@@ -279,13 +277,9 @@ fn inherited_descriptor_serializes_threads_in_one_host_process() {
     let raw_fd = inherited.as_raw_fd();
     let thread_root = root.clone();
     let contender = std::thread::spawn(move || {
-        adopt_inherited_unix_interaction_lease_at(
-            raw_fd,
-            Deadline::after(25).unwrap(),
-            &thread_root,
-        )
-        .err()
-        .expect("concurrent adoption must not share a critical section")
+        adopt_inherited_unix_interaction_lease(raw_fd, Deadline::after(25).unwrap(), &thread_root)
+            .err()
+            .expect("concurrent adoption must not share a critical section")
     });
 
     let error = contender.join().unwrap();
@@ -295,7 +289,7 @@ fn inherited_descriptor_serializes_threads_in_one_host_process() {
         "interaction_process_lock_timeout"
     );
     drop(first);
-    adopt_inherited_unix_interaction_lease_at(
+    adopt_inherited_unix_interaction_lease(
         inherited.as_raw_fd(),
         Deadline::after(1_000).unwrap(),
         &root,

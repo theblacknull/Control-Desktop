@@ -1,4 +1,5 @@
 use std::os::fd::RawFd;
+use std::path::PathBuf;
 
 use agent_desktop_core::{
     AdapterError, Deadline, ErrorCode, INTERACTION_LEASE_FD_ENV, InteractionLease,
@@ -9,7 +10,7 @@ const INVALID_FD: &str = "Inherited interaction lease FD must be a nonnegative i
 
 pub(crate) fn acquire(deadline: Deadline) -> Result<InteractionLease, AdapterError> {
     let Some(raw) = std::env::var_os(INTERACTION_LEASE_FD_ENV) else {
-        return acquire_unix_interaction_lease(deadline);
+        return acquire_unix_interaction_lease(deadline, &lock_root());
     };
     let raw = raw.into_string().map_err(|_| {
         AdapterError::new(
@@ -18,7 +19,19 @@ pub(crate) fn acquire(deadline: Deadline) -> Result<InteractionLease, AdapterErr
         )
     })?;
     let fd = parse_fd(&raw)?;
-    adopt_inherited_unix_interaction_lease(fd, deadline)
+    adopt_inherited_unix_interaction_lease(fd, deadline, &lock_root())
+}
+
+/// The directory that holds the interaction lock: logind's `/run/user/<uid>`,
+/// which no other account can create, or `/tmp` on a host without logind.
+/// It depends only on the user, never on the caller's environment, so every
+/// agent of one user shares one lock.
+pub(crate) fn lock_root() -> PathBuf {
+    let logind = PathBuf::from(format!("/run/user/{}", unsafe { libc::geteuid() }));
+    match std::fs::symlink_metadata(&logind) {
+        Ok(metadata) if metadata.is_dir() => logind,
+        _ => PathBuf::from("/tmp"),
+    }
 }
 
 fn parse_fd(raw: &str) -> Result<RawFd, AdapterError> {

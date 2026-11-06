@@ -104,26 +104,21 @@ impl InteractionLease {
     }
 }
 
+/// Acquires the desktop interaction lease kept under `root`. The adapter
+/// chooses a per-user directory that no other account can create first.
 #[cfg(unix)]
 pub fn acquire_unix_interaction_lease(
     deadline: Deadline,
+    root: &std::path::Path,
 ) -> Result<InteractionLease, AdapterError> {
     let process_guard = crate::session::process_lease_guard::ProcessLeaseGuard::acquire(deadline)?;
-    let path = interaction_lock_path_at(std::path::Path::new("/tmp"))?;
+    let path = interaction_lock_path_at(root)?;
     let lock = FileLock::acquire(&path, deadline, "desktop interaction lease")?;
     Ok(InteractionLease::from_file_lock(
         deadline,
         lock,
         process_guard,
     ))
-}
-
-#[cfg(unix)]
-pub fn adopt_inherited_unix_interaction_lease(
-    raw_fd: std::os::fd::RawFd,
-    deadline: Deadline,
-) -> Result<InteractionLease, AdapterError> {
-    adopt_inherited_unix_interaction_lease_at(raw_fd, deadline, std::path::Path::new("/tmp"))
 }
 
 #[cfg(unix)]
@@ -134,23 +129,10 @@ fn interaction_lock_path_at(root: &std::path::Path) -> Result<PathBuf, AdapterEr
     Ok(directory.join("interaction.lock"))
 }
 
-#[cfg(all(unix, test))]
-fn acquire_unix_interaction_lease_at(
-    deadline: Deadline,
-    root: &std::path::Path,
-) -> Result<InteractionLease, AdapterError> {
-    let process_guard = crate::session::process_lease_guard::ProcessLeaseGuard::acquire(deadline)?;
-    let path = interaction_lock_path_at(root)?;
-    let lock = FileLock::acquire(&path, deadline, "test desktop interaction lease")?;
-    Ok(InteractionLease::from_file_lock(
-        deadline,
-        lock,
-        process_guard,
-    ))
-}
-
+/// Adopts an interaction lease descriptor inherited from a parent that holds
+/// the lock under the same `root`.
 #[cfg(unix)]
-fn adopt_inherited_unix_interaction_lease_at(
+pub fn adopt_inherited_unix_interaction_lease(
     raw_fd: std::os::fd::RawFd,
     deadline: Deadline,
     root: &std::path::Path,

@@ -30,7 +30,10 @@ impl SystemOps for MacOSAdapter {
         deadline: Deadline,
     ) -> Result<InteractionLease, AdapterError> {
         let Some(raw) = std::env::var_os(agent_desktop_core::INTERACTION_LEASE_FD_ENV) else {
-            return agent_desktop_core::acquire_unix_interaction_lease(deadline);
+            return agent_desktop_core::acquire_unix_interaction_lease(
+                deadline,
+                &interaction_lock_root()?,
+            );
         };
         let raw = raw.into_string().map_err(|_| {
             AdapterError::new(
@@ -50,7 +53,11 @@ impl SystemOps for MacOSAdapter {
                 "Inherited interaction lease FD must be a nonnegative integer",
             ));
         }
-        agent_desktop_core::adopt_inherited_unix_interaction_lease(fd, deadline)
+        agent_desktop_core::adopt_inherited_unix_interaction_lease(
+            fd,
+            deadline,
+            &interaction_lock_root()?,
+        )
     }
 
     fn permission_report(&self, deadline: Deadline) -> Result<PermissionReport, AdapterError> {
@@ -311,4 +318,30 @@ impl SystemOps for MacOSAdapter {
             _lease.deadline(),
         )
     }
+}
+
+/// The per-user temporary directory Darwin assigns each account, which no
+/// other account can create. It depends only on the user, never on the
+/// caller's environment, so every agent of one user shares one lock.
+fn interaction_lock_root() -> Result<std::path::PathBuf, AdapterError> {
+    use std::os::unix::ffi::OsStringExt;
+
+    let mut buffer = vec![0u8; libc::PATH_MAX as usize];
+    let written = unsafe {
+        libc::confstr(
+            libc::_CS_DARWIN_USER_TEMP_DIR,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+        )
+    };
+    if written == 0 || written > buffer.len() {
+        return Err(AdapterError::new(
+            agent_desktop_core::ErrorCode::Internal,
+            "Could not resolve the per-user temporary directory",
+        ));
+    }
+    buffer.truncate(written - 1);
+    Ok(std::path::PathBuf::from(std::ffi::OsString::from_vec(
+        buffer,
+    )))
 }

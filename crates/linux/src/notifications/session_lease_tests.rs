@@ -60,7 +60,11 @@ fn notification_cleanup_retains_the_input_workers_interaction_lease() {
         &log(),
         vec![reading(&[spec("Mail", "message")])],
     ));
-    let lease = acquire_unix_interaction_lease(Deadline::after(30_000).unwrap()).unwrap();
+    let lease = acquire_unix_interaction_lease(
+        Deadline::after(30_000).unwrap(),
+        &crate::system::interaction::interaction_lease::lock_root(),
+    )
+    .unwrap();
     let session = Session::open(&world, InteractionPolicy::headed(), &lease).unwrap();
     session.finish(Ok(())).expect("owned popup restored");
     assert!(!world.0.showing.get());
