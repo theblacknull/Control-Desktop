@@ -52,7 +52,7 @@ fn verify_selected_value(
         prepare(element, deadline)?;
         if crate::tree::copy_value_typed(element, deadline)
             .as_deref()
-            .is_some_and(|value| value.eq_ignore_ascii_case(expected))
+            .is_some_and(|value| super::select_name::menu_title_matches(value, expected))
         {
             return Ok(true);
         }
@@ -273,7 +273,7 @@ fn deliver_candidate(
 
 fn press_candidate(candidate: &AXElement, deadline: Deadline) -> Result<bool, AdapterError> {
     prepare(candidate, deadline)?;
-    crate::actions::ax_helpers::try_ax_action_or_err(candidate, "AXPress", deadline)
+    crate::actions::ax_perform::press_or_open(candidate, deadline)
 }
 
 fn wait_for_menu_to_close(pid: i32, deadline: Deadline) -> Result<bool, AdapterError> {

@@ -38,7 +38,7 @@ pub(super) fn try_menu_bar_shortcut(
             .is_some_and(|value| value.to_uppercase() == target_char)
             && read_menu_item_modifiers(&element, deadline)? == Some(target_modifiers)
         {
-            return crate::actions::ax_helpers::try_ax_action_or_err(&element, "AXPress", deadline);
+            return crate::actions::ax_perform::press_or_open(&element, deadline);
         }
         if depth >= MAX_MENU_DEPTH {
             if has_children(&element, deadline)? {

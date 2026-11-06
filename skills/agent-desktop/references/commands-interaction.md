@@ -127,7 +127,7 @@ agent-desktop toggle @s8f3k2p9:e6
 agent-desktop expand @s8f3k2p9:e7
 ```
 
-- `select` picks an option by display text in a list, dropdown or combobox. For menu-backed controls it opens the menu, activates the item and checks the control value. A missing item or an unchanged value returns a structured error.
+- `select` picks an option by display text in a list, dropdown or combobox. For menu-backed controls it opens the menu, activates the item and checks the control value. A missing item or an unchanged value returns a structured error. Menu item titles match with or without their trailing ellipsis (`…`), so `select @ref "Export"` also picks `Export…`, and a control that reports `Export…` as its selected value accepts it as the verified result of `Export`.
 - `check` and `uncheck` are idempotent and verify the final state. Prefer them over `toggle`. Use `toggle` only when the current state is unknown, and it needs readable before and after state.
 - `expand` and `collapse` act on disclosure triangles, tree items and accordions, and verify the final state.
 

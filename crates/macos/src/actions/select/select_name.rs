@@ -178,8 +178,18 @@ fn matches_evidence(evidence: &LocatorEvidence, value: &str) -> Result<bool, Ada
         .any(|field| {
             field
                 .known()
-                .is_some_and(|name| name.eq_ignore_ascii_case(value))
+                .is_some_and(|name| menu_title_matches(name, value))
         }))
+}
+
+pub(crate) fn menu_title_matches(candidate: &str, value: &str) -> bool {
+    let candidate = candidate.trim();
+    let value = value.trim();
+    candidate.eq_ignore_ascii_case(value)
+        || candidate
+            .trim_end_matches('\u{2026}')
+            .trim_end()
+            .eq_ignore_ascii_case(value.trim_end_matches('\u{2026}').trim_end())
 }
 
 fn incomplete(phase: &str) -> AdapterError {
@@ -197,6 +207,20 @@ fn incomplete(phase: &str) -> AdapterError {
 mod tests {
     use super::*;
     use agent_desktop_core::{IdentifierEvidence, LocatorField, LocatorRefEvidence};
+
+    #[test]
+    fn menu_title_matches_ignores_a_trailing_ellipsis_on_either_side() {
+        assert!(menu_title_matches("Export\u{2026}", "Export"));
+        assert!(menu_title_matches("Export", "Export\u{2026}"));
+        assert!(menu_title_matches("Export\u{2026}", "Export\u{2026}"));
+        assert!(menu_title_matches("  Export \u{2026} ", "export"));
+    }
+
+    #[test]
+    fn menu_title_matches_still_requires_the_names_to_differ_at_the_core() {
+        assert!(!menu_title_matches("Export\u{2026}", "Import"));
+        assert!(!menu_title_matches("Export", "Export All"));
+    }
 
     fn owner(roles: &[&str], named: bool) -> Result<Option<usize>, AdapterError> {
         collection_owner(
