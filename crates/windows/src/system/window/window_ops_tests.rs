@@ -262,4 +262,39 @@ mod windows_only {
             "every attempt performs its own walk"
         );
     }
+
+    /// One window identity read must use the shared table and must not fall
+    /// back to a full `Toolhelp32` walk for a process that was in it.
+    #[test]
+    fn a_window_identity_read_uses_the_shared_table_without_a_per_window_walk() {
+        crate::tree::fixture::bootstrap();
+        let fixture = crate::tree::fixture::HostedFixture::spawn().expect("a fixture host starts");
+        let pid = ProcessId::from(fixture.process_id());
+        process_identity::inventory_calls::take();
+        process_identity::inventory_calls::take_single_image_pids();
+        let table = process_identity::ProcessTable::new();
+
+        let first = process_facts(fixture.handle() as _, &table)
+            .expect("the fixture window has a process identity");
+        let second = process_facts(fixture.handle() as _, &table)
+            .expect("the fixture window still has a process identity");
+
+        assert_eq!(first.0, pid);
+        assert_eq!(second.0, pid);
+        assert!(
+            first.1.is_some(),
+            "the fixture process has a generation token"
+        );
+        assert!(!first.2.is_empty(), "the fixture process has an image name");
+        let (table_walks, single_walks) = process_identity::inventory_calls::take();
+        assert_eq!(table_walks, 1, "one shared table serves both reads");
+        assert_eq!(
+            single_walks, 0,
+            "neither read may fall back to a per-pid process-table walk"
+        );
+        assert!(
+            !process_identity::inventory_calls::take_single_image_pids().contains(&pid),
+            "a process present in the table must not be read through a per-pid walk"
+        );
+    }
 }

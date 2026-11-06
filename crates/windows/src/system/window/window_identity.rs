@@ -33,19 +33,25 @@ impl<'a> WindowIdentityEvidence<'a> {
     }
 
     /// The strict check a window freshly listed in the same invocation
-    /// receives: pid, token, app, and title must all match the live window.
+    /// receives, against a process inventory captured once for the whole
+    /// listing. Pid, token, app, and title must all match the live window.
     ///
     /// A recycled HWND whose process no longer matches fails closed as
     /// `WINDOW_NOT_FOUND`, never resolving to the new occupant.
-    pub(crate) fn verify_strict(&self) -> Result<(), AdapterError> {
+    pub(crate) fn verify_strict_with(
+        &self,
+        table: &process_identity::ProcessTable,
+    ) -> Result<(), AdapterError> {
         if !process_identity::matches_instance(self.pid, self.process_instance)? {
             return Err(window_identity_mismatch(self.handle));
         }
-        if !self.app.is_empty()
-            && process_identity::process_image_name(self.pid).unwrap_or_default() != self.app
-        {
+        if !self.app.is_empty() && table.image_name(self.pid).unwrap_or_default() != self.app {
             return Err(window_identity_mismatch(self.handle));
         }
+        self.verify_title()
+    }
+
+    fn verify_title(&self) -> Result<(), AdapterError> {
         if self.title.is_some_and(|title| !title.is_empty()) {
             let live = live_window_title(self.handle);
             if live.as_deref() != self.title {
@@ -317,7 +323,9 @@ mod tests {
                 return;
             }
             assert!(
-                evidence.verify_strict().is_err(),
+                evidence
+                    .verify_strict_with(&process_identity::ProcessTable::new())
+                    .is_err(),
                 "strict verification rejects a title the live window does not have"
             );
         }

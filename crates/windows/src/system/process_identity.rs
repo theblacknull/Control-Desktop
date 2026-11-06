@@ -1,4 +1,6 @@
 use agent_desktop_core::{AdapterError, ProcessId};
+use std::cell::{OnceCell, RefCell};
+use std::collections::HashMap;
 
 /// The process-generation token: a creation-time-derived identity that
 /// survives HWND recycling, mirroring macOS's
@@ -46,6 +48,9 @@ impl ProcessIdentity {
             GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
         };
 
+        #[cfg(test)]
+        inventory_calls::record_identity_capture();
+
         let raw_pid = u32::from(pid);
         let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, raw_pid) };
         if process.is_null() {
@@ -84,6 +89,10 @@ impl ProcessIdentity {
         )
     }
 
+    fn creation_ticks(self) -> u64 {
+        self.creation_seconds * TICKS_PER_SECOND + self.creation_subtick
+    }
+
     /// Whether this identity still matches the process at `pid` right now.
     pub(crate) fn still_matches(self) -> Result<bool, AdapterError> {
         Ok(Self::capture(self.pid)?.is_some_and(|current| current == self))
@@ -93,6 +102,158 @@ impl ProcessIdentity {
 pub(crate) fn token_for_pid(pid: ProcessId) -> Result<Option<String>, AdapterError> {
     Ok(ProcessIdentity::capture(pid)?.map(ProcessIdentity::token))
 }
+
+/// One process inventory shared by every window in a single listing.
+///
+/// The window inventory used to read the process image table once per visible
+/// window, so a desktop with `n` windows paid `n` full `Toolhelp32` walks. This
+/// table walks it at most once per listing, and caches the per-pid generation
+/// token so several windows of the same application share one `OpenProcess`
+/// and `GetProcessTimes` pair.
+///
+/// The image cache is generation-checked before it is trusted. A pid can be
+/// recycled between the snapshot and the lookup, so a cached name is returned
+/// only when the process's creation time is no later than the snapshot's;
+/// otherwise the name is read live. A failed identity capture is never cached,
+/// and the strict identity re-check still reads the live process, so a
+/// recycled pid cannot pass on cached evidence alone.
+pub(crate) struct ProcessTable {
+    images: OnceCell<ImageTable>,
+    identities: RefCell<HashMap<ProcessId, ProcessIdentity>>,
+}
+
+struct ImageTable {
+    captured_at_ticks: u64,
+    names: HashMap<ProcessId, String>,
+}
+
+impl ProcessTable {
+    pub(crate) fn new() -> Self {
+        Self {
+            images: OnceCell::new(),
+            identities: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub(crate) fn identity(&self, pid: ProcessId) -> Option<ProcessIdentity> {
+        if let Some(cached) = self.identities.borrow().get(&pid).copied() {
+            return Some(cached);
+        }
+        let captured = ProcessIdentity::capture(pid).ok().flatten()?;
+        self.identities.borrow_mut().insert(pid, captured);
+        Some(captured)
+    }
+
+    pub(crate) fn token(&self, pid: ProcessId) -> Option<String> {
+        self.identity(pid).map(ProcessIdentity::token)
+    }
+
+    pub(crate) fn image_name(&self, pid: ProcessId) -> Option<String> {
+        let table = self.images.get_or_init(process_image_table);
+        let Some(cached) = table.names.get(&pid) else {
+            // A process that started after the table was captured is not in
+            // it; read that pid directly rather than reporting an empty app.
+            return process_image_name(pid);
+        };
+        match self.identity(pid) {
+            // The process was alive when the snapshot was taken, so the cached
+            // name belongs to the same pid generation.
+            Some(identity) if identity.creation_ticks() <= table.captured_at_ticks => {
+                Some(cached.clone())
+            }
+            // The pid was recycled after the snapshot, or its creation time is
+            // unreadable; read the live name instead of attributing the
+            // predecessor's image to it.
+            _ => process_image_name(pid),
+        }
+    }
+
+    /// The token and image name one window's identity needs, read from the
+    /// shared table.
+    pub(crate) fn facts(&self, pid: ProcessId) -> (Option<String>, String) {
+        (self.token(pid), self.image_name(pid).unwrap_or_default())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cached_identity_count(&self) -> usize {
+        self.identities.borrow().len()
+    }
+}
+
+/// Every process image name the table can see, in one walk.
+#[cfg(target_os = "windows")]
+fn process_image_table() -> ImageTable {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+        TH32CS_SNAPPROCESS,
+    };
+
+    #[cfg(test)]
+    inventory_calls::record_image_table_walk();
+
+    let captured_at_ticks = filetime_ticks_now();
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return ImageTable {
+            captured_at_ticks,
+            names: HashMap::new(),
+        };
+    }
+    let mut names = HashMap::new();
+    let mut entry = PROCESSENTRY32W {
+        dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+        ..Default::default()
+    };
+    let mut ok = unsafe { Process32FirstW(snapshot, &mut entry) };
+    while ok != 0 {
+        names.insert(
+            ProcessId::from(entry.th32ProcessID),
+            wide_buffer_to_string(&entry.szExeFile),
+        );
+        ok = unsafe { Process32NextW(snapshot, &mut entry) };
+    }
+    unsafe {
+        windows_sys::Win32::Foundation::CloseHandle(snapshot);
+    }
+    ImageTable {
+        captured_at_ticks,
+        names,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn process_image_table() -> ImageTable {
+    ImageTable {
+        captured_at_ticks: 0,
+        names: HashMap::new(),
+    }
+}
+
+/// The current wall clock in Windows FILETIME ticks, the same epoch and unit
+/// as the `GetProcessTimes` creation time, so a pid generation can be compared
+/// to the snapshot instant.
+#[cfg(target_os = "windows")]
+fn filetime_ticks_now() -> u64 {
+    const WINDOWS_EPOCH_OFFSET_SECONDS: u64 = 11_644_473_600;
+    let since_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    (since_epoch.as_secs() + WINDOWS_EPOCH_OFFSET_SECONDS) * TICKS_PER_SECOND
+        + u64::from(since_epoch.subsec_nanos() / 100)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn filetime_ticks_now() -> u64 {
+    0
+}
+
+/// Test-visible counts for the two process reads, so a regression that walks
+/// the whole process table per window fails a test rather than only a
+/// benchmark.
+#[cfg(test)]
+#[path = "process_identity_inventory_calls.rs"]
+pub(crate) mod inventory_calls;
 
 #[cfg(target_os = "windows")]
 pub(crate) fn process_is_running(pid: ProcessId) -> bool {
@@ -168,6 +329,9 @@ pub(crate) fn process_image_name(pid: ProcessId) -> Option<String> {
         TH32CS_SNAPPROCESS,
     };
 
+    #[cfg(test)]
+    inventory_calls::record_single_image_walk(pid);
+
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
         return None;
@@ -231,129 +395,5 @@ fn parse_token(pid: ProcessId, token: &str) -> Result<Option<ProcessIdentity>, A
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn process_image_name_finds_the_current_process() {
-        let name = process_image_name(ProcessId::from(std::process::id()));
-
-        assert!(
-            name.is_some_and(|name| !name.is_empty()),
-            "the current process must find its own image name in the process table"
-        );
-    }
-
-    #[test]
-    fn token_shape_mirrors_macos_is_two_component_creation_time() {
-        let identity = ProcessIdentity {
-            pid: ProcessId::new(1),
-            creation_seconds: 1_700_000_000,
-            creation_subtick: 123_456,
-        };
-
-        assert_eq!(identity.token(), "windows-proc-v1:1700000000:123456");
-    }
-
-    #[test]
-    fn two_processes_started_in_the_same_second_stay_distinct() {
-        let first = ProcessIdentity {
-            pid: ProcessId::new(1),
-            creation_seconds: 1_700_000_000,
-            creation_subtick: 100,
-        };
-        let second = ProcessIdentity {
-            pid: ProcessId::new(1),
-            creation_seconds: 1_700_000_000,
-            creation_subtick: 200,
-        };
-
-        assert_ne!(first, second);
-        assert_ne!(first.token(), second.token());
-    }
-
-    #[test]
-    fn a_different_generation_is_a_different_identity() {
-        let before = ProcessIdentity {
-            pid: ProcessId::new(1),
-            creation_seconds: 1_700_000_000,
-            creation_subtick: 100,
-        };
-        let after = ProcessIdentity {
-            pid: ProcessId::new(1),
-            creation_seconds: 1_700_000_100,
-            creation_subtick: 100,
-        };
-
-        assert_ne!(before, after);
-        assert_eq!(before.pid, after.pid);
-        assert_ne!(before.token(), after.token());
-    }
-
-    #[test]
-    fn a_shape_mismatch_matches_nothing() {
-        let pid = ProcessId::new(1);
-
-        assert!(!matches_instance(pid, "macos-proc-v1:1:2").unwrap());
-        assert!(!matches_instance(pid, "windows-proc-v2:1:2").unwrap());
-        assert!(!matches_instance(pid, "windows-proc-v1:nope:2").unwrap());
-        assert!(!matches_instance(pid, "").unwrap());
-    }
-
-    #[test]
-    fn a_fresh_token_matches_its_own_process() {
-        let pid = ProcessId::from(std::process::id());
-        let Some(token) = token_for_pid(pid).unwrap() else {
-            return;
-        };
-
-        assert!(
-            matches_instance(pid, &token).unwrap(),
-            "a freshly captured token must match the same process"
-        );
-    }
-
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn an_exited_process_with_its_child_handle_held_is_not_running() {
-        for exit_code in [0, 259] {
-            let mut child = std::process::Command::new("cmd")
-                .args(["/c", "exit", &exit_code.to_string()])
-                .spawn()
-                .expect("spawn child");
-            let pid = ProcessId::from(child.id());
-            assert_eq!(
-                child.wait().expect("wait for child exit").code(),
-                Some(exit_code)
-            );
-
-            assert!(!process_is_running(pid), "child exited with {exit_code}");
-        }
-        assert!(process_is_running(ProcessId::from(std::process::id())));
-    }
-
-    /// The recycled-pid case: a well-formed token whose generation does not
-    /// match the live process at that pid - the shape a new process reusing
-    /// an old HWND's pid trips - must fail closed on both entry points.
-    #[test]
-    fn a_generation_mismatched_token_fails_closed() {
-        let pid = ProcessId::from(std::process::id());
-        let Some(current) = ProcessIdentity::capture(pid).unwrap() else {
-            return;
-        };
-        let corrupted = ProcessIdentity {
-            creation_seconds: current.creation_seconds.wrapping_add(1),
-            ..current
-        };
-
-        assert!(
-            !corrupted.still_matches().unwrap(),
-            "a different generation of the same pid must not still-match"
-        );
-        assert!(
-            !matches_instance(pid, &corrupted.token()).unwrap(),
-            "a generation-mismatched token must not match the live process"
-        );
-    }
-}
+#[path = "process_identity_tests.rs"]
+mod tests;

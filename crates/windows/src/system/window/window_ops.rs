@@ -25,16 +25,17 @@ pub(crate) fn passes_filter(window: &EnumeratedWindow) -> bool {
 #[cfg(target_os = "windows")]
 fn process_facts(
     handle: super::window_enum::WindowHandle,
+    table: &process_identity::ProcessTable,
 ) -> Option<(ProcessId, Option<String>, String)> {
     let pid = super::window_identity::live_window_owner(handle)?;
-    let token = process_identity::token_for_pid(pid).ok().flatten();
-    let name = process_identity::process_image_name(pid).unwrap_or_default();
+    let (token, name) = table.facts(pid);
     Some((pid, token, name))
 }
 
 #[cfg(not(target_os = "windows"))]
 fn process_facts(
     _handle: super::window_enum::WindowHandle,
+    _table: &process_identity::ProcessTable,
 ) -> Option<(ProcessId, Option<String>, String)> {
     None
 }
@@ -69,20 +70,21 @@ pub(crate) fn window_class_name(_handle: super::window_enum::WindowHandle) -> Op
 #[cfg(target_os = "windows")]
 fn identity_facts(
     handle: super::window_enum::WindowHandle,
+    table: &process_identity::ProcessTable,
 ) -> Option<(ProcessId, Option<String>, String)> {
     if let Some(pid) = frame_identity::hosted_application_pid(handle) {
-        let token = process_identity::token_for_pid(pid).ok().flatten();
-        let name = process_identity::process_image_name(pid).unwrap_or_default();
+        let (token, name) = table.facts(pid);
         return Some((pid, token, name));
     }
-    process_facts(handle)
+    process_facts(handle, table)
 }
 
 #[cfg(not(target_os = "windows"))]
 fn identity_facts(
     handle: super::window_enum::WindowHandle,
+    table: &process_identity::ProcessTable,
 ) -> Option<(ProcessId, Option<String>, String)> {
-    process_facts(handle)
+    process_facts(handle, table)
 }
 
 /// Builds one `WindowInfo` from an enumerated window: the frame's handle,
@@ -146,6 +148,7 @@ fn list_windows_live_once(
     let app_filter = filter.app.as_deref();
     let failure = std::cell::RefCell::new(None);
     let mut seen = 0usize;
+    let process_table = process_identity::ProcessTable::new();
 
     enumerate_top_level(|window| {
         if seen > 0 {
@@ -158,7 +161,7 @@ fn list_windows_live_once(
         if !passes_filter(&window) {
             return true;
         }
-        let Some((pid, token, app)) = identity_facts(window.handle) else {
+        let Some((pid, token, app)) = identity_facts(window.handle, &process_table) else {
             return true;
         };
         if let Some(filter_name) = app_filter {
@@ -173,7 +176,7 @@ fn list_windows_live_once(
         }
         focused_seen |= focused;
         let info = window_info_from(window, &title, (pid, token, app), focused);
-        if let Err(error) = re_verify(&info) {
+        if let Err(error) = re_verify(&info, &process_table) {
             *failure.borrow_mut() = Some(error);
             return false;
         }
@@ -253,12 +256,15 @@ pub(crate) fn is_root_foreground_window(handle: super::window_enum::WindowHandle
 /// from that same handle a moment earlier. A window destroyed or re-owned
 /// between assembly and verification fails the inventory rather than
 /// emitting a half-identified entry, so both failures return.
-fn re_verify(info: &WindowInfo) -> Result<(), AdapterError> {
+fn re_verify(
+    info: &WindowInfo,
+    table: &process_identity::ProcessTable,
+) -> Result<(), AdapterError> {
     let handle = parse_handle(&info.id);
     let Some(evidence) = WindowIdentityEvidence::from_info(handle, info) else {
         return Ok(());
     };
-    evidence.verify_strict()?;
+    evidence.verify_strict_with(table)?;
     evidence.verify_stored()
 }
 
