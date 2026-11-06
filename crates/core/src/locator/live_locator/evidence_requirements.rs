@@ -25,6 +25,7 @@ impl EvidenceRequirements {
             ref_evidence: RefEvidenceRequirements {
                 bounds: true,
                 actions: true,
+                descriptors: true,
             },
         }
     }

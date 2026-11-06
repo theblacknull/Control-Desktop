@@ -2,6 +2,7 @@
 pub struct RefEvidenceRequirements {
     pub bounds: bool,
     pub actions: bool,
+    pub descriptors: bool,
 }
 
 impl RefEvidenceRequirements {
@@ -9,6 +10,7 @@ impl RefEvidenceRequirements {
         Self {
             bounds: self.bounds || other.bounds,
             actions: self.actions || other.actions,
+            descriptors: self.descriptors || other.descriptors,
         }
     }
 }

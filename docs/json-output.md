@@ -171,6 +171,10 @@ Earlier output synthesized a display name, falling back to `value` or
 `name` as always present must tolerate its absence and apply their own fallback
 to `role` or `value`.
 
+## Node descriptors
+
+A node may carry optional presentation descriptors, emitted only when the platform supplies them and omitted otherwise: `subrole`, `role_description`, `placeholder`, `dom_classes`, and `shortcut`. `shortcut` is the element's bound key chord in the same `+`-joined vocabulary `press` accepts (`cmd+shift+p`, `cmd+return`); word order is `ctrl`, `alt`, `shift`, then `cmd`, and a binding with no command key omits `cmd`. macOS emits it for menu items from the provider's own command binding, so the value is directly pressable. A node that supplies none of these serializes exactly as before, so the additions are non-breaking.
+
 ## Ref re-identification details
 
 Every ref is re-identified from its stored entry or refused, and `details.kind` names which. The core resolver refuses a saved ref with one of these four kinds:
@@ -185,6 +189,7 @@ Every ref is re-identified from its stored entry or refused, and `details.kind` 
 The fifth outcome is `resolution_identity_unknown`, which carries `TIMEOUT`: a live field could not be read, so the identity count stayed unproven. It is retryable. Linux menu and tray refs report the same kind as `STALE_REF`.
 
 After the core resolver chooses the element, the platform adapter lands it, and a landing failure keeps the adapter's own `details.kind` (for example `resolve_no_candidate` on Linux and Windows, or `resolution_complete_absence` on macOS). The platform skills list those kinds. `saved_ref_absent`, `saved_ref_ambiguous` and `identity_not_unique` carry `details.retryable: false`, because waiting cannot change the answer. Every one of these is `not_delivered`.
+
 
 ## Error codes
 

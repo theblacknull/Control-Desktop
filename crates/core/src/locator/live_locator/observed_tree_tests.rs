@@ -62,6 +62,7 @@ fn descriptor_evidence_projects_onto_the_accessibility_node() {
                 role_description: Some("Push button".into()),
                 placeholder: Some("Enter name".into()),
                 dom_classes: vec!["btn".into()],
+                shortcut: Some("cmd+return".into()),
             },
         },
     };
@@ -81,6 +82,7 @@ fn descriptor_evidence_projects_onto_the_accessibility_node() {
             role_description: Some("Push button".into()),
             placeholder: Some("Enter name".into()),
             dom_classes: vec!["btn".into()],
+            shortcut: Some("cmd+return".into()),
         }
     );
 

@@ -1,5 +1,6 @@
 use agent_desktop_core::{
     AdapterError, ErrorCode, LocatorEvidence, LocatorField, LocatorRefEvidence, LocatorStats,
+    NodeDescriptor,
 };
 use serde_json::json;
 
@@ -189,6 +190,14 @@ pub(crate) fn read_node(
         attrs.subrole.as_deref(),
         &read.status,
     );
+    let descriptors = if requirements.ref_evidence.descriptors && role == "menuitem" {
+        NodeDescriptor {
+            shortcut: crate::tree::properties::menu_shortcut::read_menu_shortcut(element, deadline),
+            ..NodeDescriptor::default()
+        }
+    } else {
+        NodeDescriptor::default()
+    };
     let evidence = LocatorEvidence {
         role: role_field,
         name: name_field,
@@ -212,7 +221,7 @@ pub(crate) fn read_node(
                 LocatorField::Unknown
             },
             available_actions: actions,
-            descriptors: Default::default(),
+            descriptors,
         },
     };
     Ok(NodeRead {

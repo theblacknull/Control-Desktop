@@ -8,6 +8,7 @@ pub(crate) mod capabilities;
 pub(crate) mod cf_type;
 pub(crate) mod element;
 pub(crate) mod empty_text;
+pub(crate) mod menu_shortcut;
 pub(crate) mod native_id;
 pub(crate) mod node_attr_states;
 pub(crate) mod node_attribute_decode;

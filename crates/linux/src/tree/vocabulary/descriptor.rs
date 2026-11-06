@@ -39,6 +39,7 @@ pub(crate) fn descriptors(
         role_description: non_blank(attributes, "roledescription").map(str::to_owned),
         placeholder: placeholder.text().map(str::to_owned),
         dom_classes: classes(attributes, in_web_document),
+        shortcut: None,
     }
 }
 

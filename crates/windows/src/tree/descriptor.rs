@@ -32,6 +32,7 @@ pub fn descriptors(properties: &ElementProperties) -> NodeDescriptor {
         role_description: non_empty_text(properties.get(TreeProperty::LocalizedControlType)),
         placeholder: placeholder_of(properties),
         dom_classes: Vec::new(),
+        shortcut: None,
     }
 }
 

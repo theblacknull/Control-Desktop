@@ -51,6 +51,10 @@ A cold Chromium or Electron app can take 10 to 25 seconds to expose its web tree
 
 An element gets a ref when its role is interactive or it advertises a primary action. `scrollarea` and `disclosure` get refs because `scroll`, `expand` and `collapse` need them. Static text and inert containers stay in the tree without refs. Web content advertises focus, right-click and scroll-to on almost every node, so those alone do not earn a ref. `find` returns `bounds` for such matches. Drive them with `--xy` (right-click, hover, drag) or scroll the container.
 
+### Menu item shortcuts
+
+A `menuitem` node with a key binding carries it as `shortcut`, in the same `+`-joined form `press` accepts: `"shortcut": "cmd+shift+p"`, `"shortcut": "cmd+return"`. The word order is `ctrl`, `alt`, `shift`, then `cmd`; a binding with no command key omits `cmd`. The value is the provider's own binding, so a shortcut read here always presses back. Snapshot the menu surface once to learn every command an app offers, then drive it with `press` instead of clicking. Headed `press --app` activates that app's window before it looks anything up, then resolves the item through its `AXMenuBar` and provides it with `AXPress`; headless dispatch sends the chord to the app's process as a key event and leaves the foreground alone.
+
 ### Ref re-identification
 
 A command re-identifies the element from the ref before it acts. On macOS, a ref carries the element's native address when available, so identical twins each keep their ref. On Windows and Linux, and on macOS when an element has no address, a ref resolves only when a complete read proved it was the only element in the window with its role, native id, name and description, and exactly one live element still matches. A skeleton, depth-limited or drilled capture counts against the whole window, so a shallow tree proves the same thing a full one does. Values and bounds never count as identity.
@@ -60,6 +64,7 @@ A command re-identifies the element from the ref before it acts. On macOS, a ref
 - `TIMEOUT`, `details.kind: resolution_identity_unknown`: a live read did not answer, so identity is unproven. Nothing was sent; retry.
 
 Off macOS, identical twins have no ref path: only `--headed mouse-click --xy X,Y` can choose one. It takes the foreground, and a Linux Wayland session refuses it.
+
 
 ### Surfaces
 
