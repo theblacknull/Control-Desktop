@@ -7,6 +7,7 @@ fn record(app_name: &str, pid: i32, title: &str, window_number: i64) -> WindowRe
         pid,
         title: Some(title.into()),
         window_number,
+        layer: 0,
         bounds: agent_desktop_core::Rect {
             x: 0.0,
             y: 0.0,

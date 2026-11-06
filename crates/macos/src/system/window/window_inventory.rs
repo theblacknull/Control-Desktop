@@ -46,7 +46,7 @@ pub(crate) fn list_windows_until(
                 Ok(owners)
             },
             |owners| owners.matching_pids(app_filter),
-            |pids| {
+            |pids, _| {
                 require_running_app(pids, app_filter)?;
                 cg_window::window_records_until(deadline, cg_window::WindowRecordScope::Pids(pids))
             },
@@ -143,6 +143,7 @@ fn focus_state(
                 focused: None,
                 minimized_by_id: rustc_hash::FxHashMap::default(),
                 accessible_window_ids: rustc_hash::FxHashSet::default(),
+                standard_window_ids: rustc_hash::FxHashSet::default(),
             })
         }
         Err(error) => Err(error),
@@ -218,6 +219,29 @@ fn windows_from_records_with_focus(
         .filter(|record| record.window_number > 0)
         .collect::<Vec<_>>();
     let visible_pids = visible_window_pids(&candidates);
+    let mut state_cache: rustc_hash::FxHashMap<
+        i32,
+        crate::system::window::window_ax_state::WindowAxState,
+    > = rustc_hash::FxHashMap::default();
+    for record in &candidates {
+        if state_cache.contains_key(&record.pid) {
+            continue;
+        }
+        let state = focus_state(
+            &mut ax_state,
+            record.pid,
+            focused_only,
+            visible_pids.contains(&record.pid),
+        )?;
+        state_cache.insert(record.pid, state);
+    }
+    let candidates =
+        crate::system::window::window_admission::retain_ax_admitted(candidates, |pid| {
+            Ok(state_cache
+                .get(&pid)
+                .map(|state| state.standard_window_ids.clone())
+                .unwrap_or_default())
+        });
     let mut title_counts = std::collections::HashMap::new();
     for record in &candidates {
         *title_counts
@@ -225,7 +249,6 @@ fn windows_from_records_with_focus(
             .or_insert(0) += 1;
     }
 
-    let mut state_cache = std::collections::HashMap::new();
     let mut windows = Vec::new();
     let mut focused_seen = false;
 
@@ -246,14 +269,11 @@ fn windows_from_records_with_focus(
             .get(&(record.pid, record.display_title().to_owned()))
             .copied()
             .unwrap_or(0);
-        let state = match state_cache.entry(record.pid) {
-            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(focus_state(
-                &mut ax_state,
-                record.pid,
-                focused_only,
-                visible_pids.contains(&record.pid),
-            )?),
+        let Some(state) = state_cache.get(&record.pid) else {
+            return Err(AdapterError::new(
+                agent_desktop_core::ErrorCode::Internal,
+                "Window accessibility state is missing from the assembled inventory",
+            ));
         };
         if !verify_instance(record.pid, process_instance)? {
             return Err(identity_race_error(

@@ -75,6 +75,7 @@ fn record(pid: i32, window_number: i64, process_instance: &str) -> WindowRecord 
         pid,
         title: Some("Window".into()),
         window_number,
+        layer: 0,
         bounds: Rect {
             x: 0.0,
             y: 0.0,

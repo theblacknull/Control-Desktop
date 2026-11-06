@@ -3,6 +3,9 @@ use crate::system::window::cg_window::WindowRecord;
 use agent_desktop_core::Rect;
 use rustc_hash::FxHashMap;
 
+#[path = "window_inventory_admission_tests.rs"]
+mod admission;
+
 #[derive(Clone)]
 struct ScopedOwners(FxHashMap<i32, f64>);
 
@@ -37,6 +40,7 @@ fn ax_state(
         focused,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: rustc_hash::FxHashSet::default(),
+        standard_window_ids: rustc_hash::FxHashSet::default(),
     }
 }
 
@@ -312,20 +316,7 @@ fn scoped_validation_rejects_selected_pid_membership_change() {
 }
 
 fn record(app_name: &str, pid: i32, title: &str, window_number: i64) -> WindowRecord {
-    WindowRecord {
-        app_name: app_name.to_string(),
-        pid,
-        title: Some(title.to_string()),
-        window_number,
-        bounds: agent_desktop_core::Rect {
-            x: 0.0,
-            y: 0.0,
-            width: 10.0,
-            height: 10.0,
-        },
-        visible: true,
-        process_instance: Some(format!("instance-{pid}")),
-    }
+    record_at_layer(app_name, pid, title, window_number, 0)
 }
 
 fn window_with_state(id: &str, visible: Option<bool>, minimized: Option<bool>) -> WindowInfo {
@@ -367,4 +358,28 @@ fn narrowing_leaves_nothing_when_an_application_has_only_panels() {
     narrow_to_real_windows(&mut windows);
 
     assert!(windows.is_empty());
+}
+
+fn record_at_layer(
+    app_name: &str,
+    pid: i32,
+    title: &str,
+    window_number: i64,
+    layer: i64,
+) -> WindowRecord {
+    WindowRecord {
+        app_name: app_name.to_string(),
+        pid,
+        title: Some(title.to_string()),
+        window_number,
+        layer,
+        bounds: agent_desktop_core::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 10.0,
+            height: 10.0,
+        },
+        visible: true,
+        process_instance: Some(format!("instance-{pid}")),
+    }
 }

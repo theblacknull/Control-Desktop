@@ -10,12 +10,17 @@ pub(crate) struct WindowRecord {
     pub(crate) pid: i32,
     pub(crate) title: Option<String>,
     pub(crate) window_number: i64,
+    pub(crate) layer: i64,
     pub(crate) bounds: Rect,
     pub(crate) visible: bool,
     pub(crate) process_instance: Option<String>,
 }
 
 impl WindowRecord {
+    pub(crate) fn is_normal_layer(&self) -> bool {
+        self.layer == 0
+    }
+
     pub(crate) fn display_title(&self) -> &str {
         self.title.as_deref().unwrap_or(&self.app_name)
     }
@@ -127,9 +132,6 @@ pub(in crate::system) fn records_from_dictionaries(
     let mut records = Vec::new();
     for dictionary in dictionaries {
         let layer = required_int_field(&dictionary, "kCGWindowLayer")?;
-        if layer != 0 {
-            continue;
-        }
         let pid = i32::try_from(required_int_field(&dictionary, "kCGWindowOwnerPID")?)
             .map_err(|_| invalid_field_error("kCGWindowOwnerPID"))?;
         if pid <= 0 {
@@ -156,6 +158,7 @@ pub(in crate::system) fn records_from_dictionaries(
             pid,
             title: string_field(&dictionary, "kCGWindowName").filter(|title| !title.is_empty()),
             window_number,
+            layer,
             bounds,
             visible: bool_field(&dictionary, "kCGWindowIsOnscreen")?,
             process_instance: None,
@@ -217,7 +220,16 @@ fn capture_process_instances_with(
     Ok(())
 }
 
-type InventorySignatureEntry<'a> = (i32, i64, &'a str, Option<&'a str>, [u64; 4], bool, &'a str);
+type InventorySignatureEntry<'a> = (
+    i32,
+    i64,
+    i64,
+    &'a str,
+    Option<&'a str>,
+    [u64; 4],
+    bool,
+    &'a str,
+);
 
 fn inventory_signature(records: &[WindowRecord]) -> Vec<InventorySignatureEntry<'_>> {
     let mut signature = records
@@ -226,6 +238,7 @@ fn inventory_signature(records: &[WindowRecord]) -> Vec<InventorySignatureEntry<
             (
                 record.pid,
                 record.window_number,
+                record.layer,
                 record.app_name.as_str(),
                 record.title.as_deref(),
                 [

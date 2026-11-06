@@ -9,6 +9,7 @@ pub(crate) struct WindowAxState {
     pub(crate) focused: Option<AxWindowIdentity>,
     pub(crate) minimized_by_id: FxHashMap<i64, bool>,
     pub(crate) accessible_window_ids: FxHashSet<i64>,
+    pub(crate) standard_window_ids: FxHashSet<i64>,
 }
 
 pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, AdapterError> {
@@ -16,8 +17,12 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
     let focused = focused_identity(&app, pid, deadline)?;
     let mut minimized_by_id = FxHashMap::default();
     let mut accessible_window_ids = FxHashSet::default();
+    let mut standard_window_ids = FxHashSet::default();
     for_each_window(pid, deadline, |window, window_id| {
         accessible_window_ids.insert(window_id);
+        if is_standard_window(window, deadline)? {
+            standard_window_ids.insert(window_id);
+        }
         if let Some(minimized) =
             crate::tree::surface_read::boolean(window, "AXMinimized", deadline)?
         {
@@ -29,6 +34,7 @@ pub(crate) fn read_until(pid: i32, deadline: Instant) -> Result<WindowAxState, A
         focused,
         minimized_by_id,
         accessible_window_ids,
+        standard_window_ids,
     })
 }
 
@@ -41,7 +47,22 @@ pub(crate) fn read_frontmost_until(
         focused: focused_identity(&app, pid, deadline)?,
         minimized_by_id: FxHashMap::default(),
         accessible_window_ids: FxHashSet::default(),
+        standard_window_ids: FxHashSet::default(),
     })
+}
+
+pub(crate) fn standard_window_ids_until(
+    pid: i32,
+    deadline: Instant,
+) -> Result<FxHashSet<i64>, AdapterError> {
+    let mut ids = FxHashSet::default();
+    for_each_window(pid, deadline, |window, id| {
+        if is_standard_window(window, deadline)? {
+            ids.insert(id);
+        }
+        Ok(())
+    })?;
+    Ok(ids)
 }
 
 pub(crate) fn accessible_window_ids_until(
@@ -71,6 +92,18 @@ fn for_each_window(
         }
     }
     Ok(())
+}
+
+fn is_standard_window(
+    window: &crate::tree::AXElement,
+    deadline: Instant,
+) -> Result<bool, AdapterError> {
+    let subrole = crate::tree::surface_read::string(window, "AXSubrole", deadline)?;
+    Ok(is_standard_subrole(subrole.as_deref()))
+}
+
+fn is_standard_subrole(subrole: Option<&str>) -> bool {
+    subrole == Some("AXStandardWindow")
 }
 
 pub(crate) fn label_accessibility(
@@ -172,7 +205,8 @@ fn focused_role_kind(role: Option<&str>) -> FocusedRoleKind {
 #[cfg(test)]
 mod tests {
     use super::{
-        FocusedRoleKind, focused_role_kind, is_transient_surface_role, label_accessibility,
+        FocusedRoleKind, focused_role_kind, is_standard_subrole, is_transient_surface_role,
+        label_accessibility,
     };
     use agent_desktop_core::{ProcessId, WindowInfo, WindowState};
     use rustc_hash::FxHashSet;
@@ -197,6 +231,19 @@ mod tests {
             FocusedRoleKind::NotAWindow
         );
         assert_eq!(focused_role_kind(None), FocusedRoleKind::NotAWindow);
+    }
+
+    #[test]
+    fn only_standard_subrole_windows_can_stand_in_for_a_normal_layer() {
+        assert!(is_standard_subrole(Some("AXStandardWindow")));
+        for subrole in [
+            Some("AXDialog"),
+            Some("AXFloatingWindow"),
+            Some("AXSystemDialog"),
+            None,
+        ] {
+            assert!(!is_standard_subrole(subrole));
+        }
     }
 
     #[test]

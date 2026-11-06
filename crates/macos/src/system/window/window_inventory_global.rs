@@ -51,10 +51,18 @@ fn capture_global_once(
     let mut windows = capture_global_with(
         focused_only,
         || crate::system::app::workspace_apps::window_owner_snapshot_until(deadline),
-        |eligible_pids| {
-            crate::system::window::cg_window::window_records_until(
+        |eligible_pids, frontmost_pid| {
+            let records = crate::system::window::cg_window::window_records_until(
                 deadline,
                 crate::system::window::cg_window::WindowRecordScope::Pids(eligible_pids),
+            )?;
+            Ok(
+                crate::system::window::window_admission::retain_ax_admitted_until(
+                    records,
+                    frontmost_pid,
+                    deadline,
+                    crate::system::window::window_ax_state::standard_window_ids_until,
+                ),
             )
         },
         |pid| crate::system::window::window_ax_state::read_frontmost_until(pid, deadline),
@@ -71,7 +79,7 @@ fn capture_global_once(
 fn capture_global_with<S: OwnerSnapshotView>(
     focused_only: bool,
     capture_owners: impl FnMut() -> Result<S, AdapterError>,
-    capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
+    capture_records: impl FnMut(&FxHashSet<i32>, Option<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
     mut read_frontmost: impl FnMut(i32) -> Result<WindowAxState, AdapterError>,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
     capture_stable_with(
@@ -87,7 +95,7 @@ fn capture_global_with<S: OwnerSnapshotView>(
 pub(in crate::system) fn capture_stable_with<S: OwnerSnapshotView>(
     capture_owners: impl FnMut() -> Result<S, AdapterError>,
     select_pids: impl FnMut(&S) -> FxHashSet<i32>,
-    capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
+    capture_records: impl FnMut(&FxHashSet<i32>, Option<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
     assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<Vec<WindowInfo>, AdapterError>,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
     capture_validated_with(
@@ -102,13 +110,16 @@ pub(in crate::system) fn capture_stable_with<S: OwnerSnapshotView>(
 pub(in crate::system) fn capture_validated_with<S: OwnerSnapshotView>(
     mut capture_owners: impl FnMut() -> Result<S, AdapterError>,
     mut select_pids: impl FnMut(&S) -> FxHashSet<i32>,
-    mut capture_records: impl FnMut(&FxHashSet<i32>) -> Result<Vec<WindowRecord>, AdapterError>,
+    mut capture_records: impl FnMut(
+        &FxHashSet<i32>,
+        Option<i32>,
+    ) -> Result<Vec<WindowRecord>, AdapterError>,
     mut assemble: impl FnMut(Vec<WindowRecord>, &S) -> Result<Vec<WindowInfo>, AdapterError>,
     mut validate: impl FnMut(&S, &S, &FxHashSet<i32>, &[WindowRecord]) -> Result<(), AdapterError>,
 ) -> Result<Vec<WindowInfo>, AdapterError> {
     let before = capture_owners()?;
     let eligible_pids = select_pids(&before);
-    let records = capture_records(&eligible_pids)?;
+    let records = capture_records(&eligible_pids, before.frontmost_pid())?;
     let assembled = assemble(records.clone(), &before);
     let after = capture_owners()?;
     validate(&before, &after, &eligible_pids, &records)?;
