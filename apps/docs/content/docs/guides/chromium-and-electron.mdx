@@ -83,7 +83,7 @@ Against the session above, the second `find` returned the address bar, `"name": 
 agent-desktop close-app chrome
 ```
 
-`close-app` ends the process and with it the port; the run above returned `delivered_verified` with `details.evidence: "process_instance_exited"`, and the endpoint stopped answering. While the port is open, any local process of the same user can control the app's web contents, so request `--cdp` only for the steps that need it.
+`close-app` ends the process and with it the port; the run above returned `delivered_verified` with `details.evidence: "process_instance_exited"`, and the endpoint stopped answering. While the port is open, any local process can control the app's web contents, including processes of other accounts on the same machine, because the DevTools port has no authentication. Request `--cdp` only for the steps that need it.
 
 ## When `--cdp` fails
 
