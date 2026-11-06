@@ -71,6 +71,32 @@ fn trace_redaction_covers_nested_shapes_and_substring_keys() {
 }
 
 #[test]
+fn trace_redaction_covers_credential_storage_names() {
+    let value = sanitize_trace_value(json!({
+        "authorization": "Bearer secret",
+        "requestHeaders": { "Cookie": "session=secret", "X-Api-Key": "secret" },
+        "account": { "user": "me", "passwd": "secret" },
+        "access_token": "secret",
+        "refreshToken": "secret",
+        "accessTokens": "secret",
+        "jwt": "secret",
+        "monkey": "not a credential",
+        "hotkey": "Control+C"
+    }));
+
+    assert_eq!(value["authorization"]["redacted"], true);
+    assert_eq!(value["requestHeaders"]["Cookie"]["redacted"], true);
+    assert_eq!(value["requestHeaders"]["X-Api-Key"]["redacted"], true);
+    assert_eq!(value["account"]["passwd"]["redacted"], true);
+    assert_eq!(value["access_token"]["redacted"], true);
+    assert_eq!(value["refreshToken"]["redacted"], true);
+    assert_eq!(value["accessTokens"]["redacted"], true);
+    assert_eq!(value["jwt"]["redacted"], true);
+    assert_eq!(value["monkey"], "not a credential");
+    assert_eq!(value["hotkey"], "Control+C");
+}
+
+#[test]
 fn trace_keeps_actionability_check_identifier_but_redacts_occluder_name() {
     let value = sanitize_trace_value(json!({
         "checks": [

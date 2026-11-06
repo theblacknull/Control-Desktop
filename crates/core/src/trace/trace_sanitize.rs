@@ -35,6 +35,7 @@ fn is_sensitive_trace_key(key: &str) -> bool {
         "selector",
         "secret",
         "token",
+        "tokens",
         "password",
         "title",
         "url",
@@ -44,12 +45,41 @@ fn is_sensitive_trace_key(key: &str) -> bool {
         "dom",
         "classes",
         "body",
+        "authorization",
+        "cookie",
+        "credential",
+        "passwd",
+        "apikey",
+        "accesskey",
+        "privatekey",
     ];
     const SENSITIVE_WHOLE_KEYS: &[&str] = &["actions", "key"];
+    const SENSITIVE_COMPACT_FRAGMENTS: &[&str] = &[
+        "apikey",
+        "accesskey",
+        "secretkey",
+        "privatekey",
+        "authorization",
+        "credential",
+        "password",
+        "passwd",
+        "authtoken",
+        "refreshtoken",
+        "cookie",
+        "jwt",
+    ];
+    let compact: String = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
     SENSITIVE_WHOLE_KEYS.contains(&key.to_ascii_lowercase().as_str())
         || trace_key_tokens(key)
             .iter()
             .any(|part| SENSITIVE_KEYS.contains(&part.as_str()))
+        || SENSITIVE_COMPACT_FRAGMENTS
+            .iter()
+            .any(|fragment| compact.contains(fragment))
 }
 
 fn trace_key_tokens(key: &str) -> Vec<String> {
