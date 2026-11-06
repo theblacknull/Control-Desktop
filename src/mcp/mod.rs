@@ -33,16 +33,23 @@ again. Repeat an action only when its disposition.retry is \"safe\".";
 
 /// The `mcp` subcommand; it lives outside `Commands` because it serves commands rather than being one.
 pub(crate) fn command() -> Command {
-    Command::new("mcp").about(
-        "Serve every command as an MCP tool over stdio; global flags given here apply to every call",
-    )
+    Command::new("mcp")
+        .about(
+            "Serve every command as an MCP tool over stdio; global flags given here apply to every call",
+        )
+        .arg(
+            clap::Arg::new("read-only")
+                .long("read-only")
+                .action(ArgAction::SetTrue)
+                .help("Expose only observation and metadata tools that cannot write or send input"),
+        )
 }
 
 /// Serves MCP over stdin and stdout until stdin closes, then finishes the tool calls already running.
 /// At most `MAX_CONCURRENT_CALLS` calls run at once, and a message longer than `MAX_MESSAGE_BYTES` is refused unread.
 pub(crate) fn serve(matches: &ArgMatches) -> ExitCode {
     let server = Arc::new(Server {
-        tools: catalog::tools(),
+        tools: catalog::tools(matches.get_flag("read-only")),
         globals: forwarded_globals(matches),
         calls: calls::Calls::default(),
     });

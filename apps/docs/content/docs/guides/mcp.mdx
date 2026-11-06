@@ -35,6 +35,16 @@ A tool's arguments are its command's arguments, with hyphens as underscores: `sn
 
 The tool list is read from the CLI's own command definitions, so it always matches the installed binary.
 
+## Expose observation tools only
+
+Add `--read-only` to serve only commands that observe or report metadata:
+
+```bash
+agent-desktop mcp --read-only
+```
+
+The allow-list covers `snapshot`, `find`, `get`, `is`, `list-*`, `wait`, `status`, `version` and the `skills` reads. It excludes every action, text input, clipboard access, launch, window mutation, session mutation, screenshot, trace export and batch, including the variants that take an output path. The list is reviewed in source, so a newly added command is not exposed to a read-only server until it is added there. Read-only prevents mutation, not observation: `desktop_snapshot` and the other readers still see whatever the accessibility tree exposes.
+
 ## Apply global flags once
 
 Global flags given to `mcp` apply to every call:

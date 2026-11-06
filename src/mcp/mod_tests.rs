@@ -2,7 +2,7 @@ use super::*;
 
 fn server() -> Server {
     Server {
-        tools: catalog::tools(),
+        tools: catalog::tools(false),
         globals: Vec::new(),
         calls: calls::Calls::default(),
     }
@@ -50,7 +50,7 @@ fn modern_tools_list_is_cacheable_and_complete() {
     assert_eq!(result["cacheScope"], "public");
     assert_eq!(
         result["tools"].as_array().unwrap().len(),
-        catalog::tools().len()
+        catalog::tools(false).len()
     );
 }
 
@@ -67,8 +67,40 @@ fn unknown_tools_are_protocol_errors() {
 }
 
 #[test]
+fn read_only_server_lists_only_observation_tools() {
+    let server = Server {
+        tools: catalog::tools(true),
+        globals: Vec::new(),
+        calls: calls::Calls::default(),
+    };
+    let result = server
+        .handle(&Value::Null, "tools/list", &json!({}))
+        .unwrap_or_else(|_| panic!("tools/list"));
+    let names = result["tools"]
+        .as_array()
+        .expect("tools")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect::<Vec<_>>();
+
+    assert!(names.contains(&"desktop_snapshot"), "{names:?}");
+    assert!(!names.contains(&"desktop_click"), "{names:?}");
+    assert!(!names.contains(&"desktop_type"), "{names:?}");
+
+    let Err(error) = server.handle(
+        &Value::Null,
+        "tools/call",
+        &json!({ "name": "desktop_click", "arguments": { "ref_id": "@e1" } }),
+    ) else {
+        panic!("a hidden mutating tool must not be callable");
+    };
+    assert_eq!(error.code, -32602);
+    assert_eq!(error.message, "Unknown tool: desktop_click");
+}
+
+#[test]
 fn instructions_name_only_tools_that_exist() {
-    let names = catalog::tools()
+    let names = catalog::tools(false)
         .into_iter()
         .map(|tool| tool.name)
         .collect::<Vec<_>>();

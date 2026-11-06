@@ -38,6 +38,32 @@ fn call(id: i64, name: &str, arguments: Value) -> Value {
 }
 
 #[test]
+fn mcp_read_only_server_hides_mutating_tools() {
+    let responses = serve(
+        &[
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+            call(2, "desktop_click", json!({ "ref_id": "@e1" })),
+        ],
+        &["--read-only"],
+    );
+    let tools = responses[0]["result"]["tools"]
+        .as_array()
+        .expect("tools list");
+    let names = tools
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"desktop_snapshot"), "{names:?}");
+    assert!(!names.contains(&"desktop_click"), "{names:?}");
+    assert!(!names.contains(&"desktop_type"), "{names:?}");
+    assert_eq!(
+        responses[1]["error"]["message"], "Unknown tool: desktop_click",
+        "{}",
+        responses[1]
+    );
+}
+
+#[test]
 fn mcp_tool_calls_run_the_cli_command_and_return_its_envelope() {
     let responses = serve(
         &[

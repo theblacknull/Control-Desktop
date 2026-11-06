@@ -31,7 +31,7 @@ fn parse(tool: &Tool, arguments: &Map<String, Value>) -> Result<Cli, clap::Error
 #[test]
 fn every_schema_property_is_accepted_by_the_cli_parser() {
     let mut checked = 0;
-    for tool in tools() {
+    for tool in tools(false) {
         let definition = tool.definition();
         let properties = definition["inputSchema"]["properties"]
             .as_object()
@@ -62,7 +62,7 @@ fn every_schema_property_is_accepted_by_the_cli_parser() {
 
 #[test]
 fn every_tool_runs_the_command_it_is_named_after() {
-    for tool in tools() {
+    for tool in tools(false) {
         let error = match parse(&tool, &Map::new()) {
             Ok(cli) => {
                 let command = cli.command.expect("a command");
@@ -81,7 +81,7 @@ fn every_tool_runs_the_command_it_is_named_after() {
 
 #[test]
 fn tool_names_are_unique_and_valid_for_every_major_client() {
-    let names = tools()
+    let names = tools(false)
         .into_iter()
         .map(|tool| tool.name)
         .collect::<Vec<_>>();
@@ -97,7 +97,7 @@ fn tool_names_are_unique_and_valid_for_every_major_client() {
 
 #[test]
 fn unknown_arguments_and_wrong_types_are_reported_not_passed_through() {
-    let tool = tools()
+    let tool = tools(false)
         .into_iter()
         .find(|tool| tool.path == ["skills", "get"])
         .expect("skills get tool");
@@ -121,10 +121,53 @@ fn unknown_arguments_and_wrong_types_are_reported_not_passed_through() {
 }
 
 fn tool_at(path: &[&str]) -> Tool {
-    tools()
+    tools(false)
         .into_iter()
         .find(|tool| tool.path == path)
         .expect("tool exists")
+}
+
+#[test]
+fn a_read_only_server_exposes_only_observation_and_metadata_tools() {
+    let read_only = tools(true);
+    let names = read_only
+        .iter()
+        .map(|tool| tool.name.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(!read_only.is_empty(), "a read-only server exposes tools");
+    for required in ["desktop_snapshot", "desktop_get", "desktop_list_windows"] {
+        assert!(names.contains(&required), "missing {required}: {names:?}");
+    }
+    for forbidden in [
+        "desktop_click",
+        "desktop_type",
+        "desktop_press",
+        "desktop_clipboard_set",
+        "desktop_launch",
+        "desktop_close_app",
+        "desktop_screenshot",
+        "desktop_clipboard_get",
+        "desktop_session_start",
+        "desktop_trace_export",
+        "desktop_batch",
+    ] {
+        assert!(
+            !names.contains(&forbidden),
+            "a read-only server must not expose {forbidden}"
+        );
+    }
+    for tool in read_only {
+        assert!(
+            READ_ONLY_TOOL_NAMES.contains(&tool.name.as_str()),
+            "{} is not in the reviewed read-only allow-list",
+            tool.name
+        );
+    }
+    assert!(
+        tools(false).iter().any(|tool| tool.name == "desktop_click"),
+        "the default server still exposes mutating tools"
+    );
 }
 
 #[test]

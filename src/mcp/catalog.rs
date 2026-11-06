@@ -10,6 +10,28 @@ const TOOL_PREFIX: &str = "desktop";
 const CLAP_HELP_SUBCOMMAND: &str = "help";
 const MAX_COUNT: u64 = 16;
 
+/// The tools a `mcp --read-only` server exposes. Every entry is an observation
+/// or metadata command that cannot write a user-named file, change a window,
+/// or send input. The list is an allow-list on purpose: a newly added command
+/// stays hidden from a read-only server until it is reviewed and added here.
+const READ_ONLY_TOOL_NAMES: &[&str] = &[
+    "desktop_find",
+    "desktop_get",
+    "desktop_is",
+    "desktop_list_apps",
+    "desktop_list_displays",
+    "desktop_list_notifications",
+    "desktop_list_surfaces",
+    "desktop_list_windows",
+    "desktop_skills_get",
+    "desktop_skills_list",
+    "desktop_skills_path",
+    "desktop_snapshot",
+    "desktop_status",
+    "desktop_version",
+    "desktop_wait",
+];
+
 /// One leaf CLI command exposed as an MCP tool.
 pub(crate) struct Tool {
     pub name: String,
@@ -17,13 +39,17 @@ pub(crate) struct Tool {
     command: Command,
 }
 
-/// Every leaf command of the CLI, in declaration order.
-pub(crate) fn tools() -> Vec<Tool> {
+/// Every leaf command of the CLI, in declaration order. `read_only` keeps only
+/// the observation and metadata tools that cannot write or send input.
+pub(crate) fn tools(read_only: bool) -> Vec<Tool> {
     let mut root = Cli::command();
     root.build();
     let mut found = Vec::new();
     for sub in commands(&root) {
         collect(sub, Vec::new(), &mut found);
+    }
+    if read_only {
+        found.retain(|tool| READ_ONLY_TOOL_NAMES.contains(&tool.name.as_str()));
     }
     found
 }
