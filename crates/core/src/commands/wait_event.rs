@@ -269,17 +269,21 @@ fn timeout_err(
     baseline: Option<&SignalBaseline>,
     last_error: Option<Value>,
 ) -> Result<Value, AppError> {
+    let baseline_counts = baseline.map(|base| {
+        json!({
+            "windows": base.windows.len(),
+            "apps": base.apps.len(),
+            "surfaces": base.surfaces.len(),
+        })
+    });
     let mut details = json!({
         "kind": "wait_timeout",
         "predicate": "event",
         "event": event,
         "app": app,
         "timeout_ms": timeout_ms,
-        "baseline_counts": baseline.map(|base| json!({
-            "windows": base.windows.len(),
-            "apps": base.apps.len(),
-            "surfaces": base.surfaces.len(),
-        })),
+        "baseline_counts": baseline_counts,
+        "retryable": false,
     });
     if let Some(err) = last_error {
         details["last_error"] = err;
@@ -288,13 +292,36 @@ fn timeout_err(
         AdapterError::timeout(format!(
             "Event '{event}' did not occur within {timeout_ms}ms"
         ))
+        .with_suggestion(timeout_suggestion(baseline))
         .with_details(details),
     ))
+}
+
+fn timeout_suggestion(baseline: Option<&SignalBaseline>) -> String {
+    let observed = match baseline {
+        Some(base) => format!(
+            "The baseline already contained {} window(s), {} app(s), and {} surface(s).",
+            base.windows.len(),
+            base.apps.len(),
+            base.surfaces.len()
+        ),
+        None => "No event baseline was captured.".into(),
+    };
+    format!(
+        "{observed} Event waits only report changes after the wait starts, so an event that \
+         already happened is not observable. Start the wait before the action (for example, \
+         put both commands in one 'batch'), or check the current state with 'list-windows' \
+         and 'snapshot'."
+    )
 }
 
 #[cfg(test)]
 #[path = "wait_event_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "wait_event_timeout_suggestion_tests.rs"]
+mod timeout_suggestion_tests;
 
 #[cfg(test)]
 #[path = "wait_event_stopped_tests.rs"]

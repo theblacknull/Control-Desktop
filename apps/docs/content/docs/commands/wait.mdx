@@ -169,6 +169,6 @@ A wait that runs out of time returns `TIMEOUT` with `details.kind: "wait_timeout
 }
 ```
 
-Element waits carry `ref` and `last_observed`; text waits carry `text_chars` and `expected_count` but not the text; event waits carry `baseline_counts`; any mode can carry `last_error`. Other errors: `INVALID_ARGS` for a bad mode combination or a bare ref, the ref errors for `--element`, `APP_UNRESPONSIVE` when the app stops answering, and `PERM_DENIED`.
+Element waits carry `ref` and `last_observed`; text waits carry `text_chars` and `expected_count` but not the text; event waits carry `baseline_counts` and `retryable: false`, because retrying a wait that started too late cannot recover the missed event. Any mode can carry `last_error`. Other errors: `INVALID_ARGS` for a bad mode combination or a bare ref, the ref errors for `--element`, `APP_UNRESPONSIVE` when the app stops answering, and `PERM_DENIED`.
 
 Platform limits: see [macOS](/desktop/platforms/macos), [Windows](/desktop/platforms/windows), and [Linux](/desktop/platforms/linux).

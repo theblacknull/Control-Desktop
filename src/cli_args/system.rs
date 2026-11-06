@@ -239,7 +239,7 @@ pub(crate) struct WaitArgs {
 pub(crate) struct WaitEventArgs {
     #[arg(
         long,
-        help = "Block until a desktop lifecycle signal, detected by baseline diff without needing to know the id/title up front: window-opened, window-closed, app-launched, app-terminated, focus-changed, surface-appeared, surface-dismissed"
+        help = "Block until a desktop lifecycle signal changes from a baseline taken at wait start. Put the action that causes it and the wait in one 'batch'; a wait started after the event cannot see it. Events: window-opened, window-closed, app-launched, app-terminated, focus-changed, surface-appeared, surface-dismissed"
     )]
     pub event: Option<String>,
     #[arg(

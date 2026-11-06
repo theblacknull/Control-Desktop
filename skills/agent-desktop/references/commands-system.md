@@ -134,7 +134,7 @@ Use `wait`, not a fixed sleep. `--timeout` defaults to 30000 ms. Modes:
 - **Window.** Waits for a window whose title contains the text. `--app` narrows. On timeout, `details.last_observed` lists the scoped window count and up to eight titles.
 - **Text.** Selects one app window, then waits for text in that tree. `--count N` waits until exactly N nodes match, and the result carries `count`. Several eligible windows, such as a document and its save dialog, return `AMBIGUOUS_TARGET` before any text check. `--window-id` does not narrow a text wait. To recover, find the target with `list-windows --app <app>` and inspect it with `snapshot --app <app> --window-id <id> -i`. For a dialog, use `wait --window <title> --app <app>`, then `snapshot --surface sheet` (see the dialog workflow). `--window` and `--text` are separate modes and cannot combine.
 - **Menu.** `--menu` waits for a menu surface to open. `--menu-closed` waits for it to close.
-- **Event.** `--event` is one of `window-opened`, `window-closed`, `app-launched`, `app-terminated`, `focus-changed`, `surface-appeared`, `surface-dismissed`. It diffs a baseline taken at wait start against fresh reads, so you need no window id up front. `--window-id` and `--window` narrow it.
+- **Event.** `--event` is one of `window-opened`, `window-closed`, `app-launched`, `app-terminated`, `focus-changed`, `surface-appeared`, `surface-dismissed`. It diffs a baseline taken at wait start against fresh reads, so you need no window id up front. Put the action that causes the event and the wait in one `batch`; a wait started after the event cannot see it. `--window-id` and `--window` narrow it.
 
 For `wait --event` only, `--app` resolves once, at wait start, to one process instance. (`wait --window` filters by app name on every poll.) A later process of the same name is invisible to the wait. Two running instances return `AMBIGUOUS_TARGET`. When no app matches:
 
@@ -146,7 +146,7 @@ On macOS and Windows, an existing window can still satisfy `--window` while its 
 
 The platform skills state the event and menu wait rules that differ by OS.
 
-A `TIMEOUT` from `wait` carries `details.kind: "wait_timeout"`, `last_observed` or `last_error`, and `baseline_counts` for events.
+A `TIMEOUT` from `wait` carries `details.kind: "wait_timeout"`, `last_observed` or `last_error`, and `baseline_counts` for events. An event timeout also carries `retryable: false`: retrying the wait cannot recover a change that happened before its baseline.
 
 ## batch
 
