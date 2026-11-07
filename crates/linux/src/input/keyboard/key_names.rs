@@ -89,8 +89,8 @@ pub(crate) fn modifier_keysym(modifier: &Modifier) -> u32 {
     match modifier {
         Modifier::Shift => KEYSYM_SHIFT_L,
         Modifier::Ctrl => KEYSYM_CONTROL_L,
-        Modifier::Alt => KEYSYM_ALT_L,
-        Modifier::Meta => KEYSYM_SUPER_L,
+        Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => KEYSYM_ALT_L,
+        Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => KEYSYM_SUPER_L,
     }
 }
 

@@ -89,9 +89,9 @@ fn chord_modifiers(combo: &KeyCombo, resolved: keyboard_map::ResolvedKey) -> Vec
 
 pub(crate) fn modifier_vk(modifier: &Modifier) -> u16 {
     match modifier {
-        Modifier::Meta => VK_LWIN,
+        Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => VK_LWIN,
         Modifier::Ctrl => VK_CONTROL,
-        Modifier::Alt => VK_MENU,
+        Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => VK_MENU,
         Modifier::Shift => VK_SHIFT,
     }
 }

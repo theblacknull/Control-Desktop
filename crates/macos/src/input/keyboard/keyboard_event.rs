@@ -1,4 +1,4 @@
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, Modifier};
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 use std::time::Duration;
@@ -8,21 +8,52 @@ const TEXT_CHUNK_BUDGET: Duration = Duration::from_millis(400);
 const MAX_TEXT_UTF16: usize = 1_000_000;
 const TEXT_CHUNK_UTF16: usize = 32;
 
+pub(crate) fn side_key(modifier: &Modifier) -> Option<(u16, CGEventFlags)> {
+    let (key_code, flags, device) = match modifier {
+        Modifier::LeftMeta => (55, CGEventFlags::CGEventFlagCommand, 0x08),
+        Modifier::RightMeta => (54, CGEventFlags::CGEventFlagCommand, 0x10),
+        Modifier::LeftAlt => (58, CGEventFlags::CGEventFlagAlternate, 0x20),
+        Modifier::RightAlt => (61, CGEventFlags::CGEventFlagAlternate, 0x40),
+        Modifier::Meta | Modifier::Ctrl | Modifier::Alt | Modifier::Shift => return None,
+    };
+    Some((key_code, flags | CGEventFlags::from_bits_retain(device)))
+}
+
 pub(crate) fn post_key(
-    key_code: u16,
+    keys: &[(u16, CGEventFlags)],
     flags: CGEventFlags,
     target_pid: Option<i32>,
     deadline: Deadline,
-    progress: (usize, usize),
 ) -> Result<(), AdapterError> {
-    let mut delivery = crate::actions::DeliveryTracker::from_delivered_units(progress.0);
-    ensure_budget(deadline, progress.1, delivery)?;
-    let source = event_source().map_err(|error| delivery.annotate(error))?;
-    let down = create_key_event(&source, key_code, true, flags)
+    let mut delivery = crate::actions::DeliveryTracker::default();
+    ensure_budget(deadline, 1, delivery)?;
+    let events = event_source()
+        .and_then(|source| key_events(&source, keys, flags))
         .map_err(|error| delivery.annotate(error))?;
-    let up = create_key_event(&source, key_code, false, flags)
-        .map_err(|error| delivery.annotate(error))?;
-    post_pair((down, up), target_pid, deadline, &mut delivery, progress.1)
+    post_pairs(events, target_pid, deadline, &mut delivery, 1)
+}
+
+fn key_events(
+    source: &CGEventSource,
+    keys: &[(u16, CGEventFlags)],
+    flags: CGEventFlags,
+) -> Result<Vec<(CGEvent, CGEvent)>, AdapterError> {
+    let mut sides = CGEventFlags::empty();
+    keys.iter()
+        .map(|&(key_code, own)| {
+            let held = flags | sides;
+            let released = if own.is_empty() || !sides.is_empty() {
+                held
+            } else {
+                CGEventFlags::empty()
+            };
+            sides |= own;
+            Ok((
+                create_key_event(source, key_code, true, held | own)?,
+                create_key_event(source, key_code, false, released)?,
+            ))
+        })
+        .collect()
 }
 
 pub(crate) fn post_text(
@@ -49,7 +80,13 @@ pub(crate) fn post_text(
         down.set_string_from_utf16_unchecked(&chunk);
         let up = create_key_event(&source, 0, false, CGEventFlags::empty())
             .map_err(|error| delivery.annotate(error))?;
-        post_pair((down, up), Some(target_pid), deadline, &mut delivery, total)?;
+        post_pairs(
+            vec![(down, up)],
+            Some(target_pid),
+            deadline,
+            &mut delivery,
+            total,
+        )?;
     }
     Ok(())
 }
@@ -76,40 +113,40 @@ pub(crate) fn preflight_text(text: &str, deadline: Deadline) -> Result<(), Adapt
     Ok(())
 }
 
-fn post_pair(
-    events: (CGEvent, CGEvent),
+fn post_pairs(
+    events: Vec<(CGEvent, CGEvent)>,
     target_pid: Option<i32>,
     deadline: Deadline,
     delivery: &mut crate::actions::DeliveryTracker,
     total: usize,
 ) -> Result<(), AdapterError> {
     ensure_budget(deadline, total, *delivery)?;
-    let (down, up) = events;
     let mut release = KeyReleaseGuard {
-        event: Some(up),
+        events: Vec::with_capacity(events.len()),
         target_pid,
     };
-    post(&down, target_pid);
+    for (down, up) in events {
+        post(&down, target_pid);
+        release.events.push(up);
+    }
     delivery.mark_delivered();
     sleep_bounded(deadline, KEY_SETTLE, *delivery, total)?;
-    let up = release
-        .event
-        .take()
-        .ok_or_else(|| AdapterError::internal("Keyboard release guard lost its key-up event"))
-        .map_err(|error| delivery.annotate(error))?;
-    post(&up, target_pid);
+    drop(release);
     ensure_budget(deadline, total, *delivery)
 }
 
 struct KeyReleaseGuard {
-    event: Option<CGEvent>,
+    events: Vec<CGEvent>,
     target_pid: Option<i32>,
 }
 
 impl Drop for KeyReleaseGuard {
     fn drop(&mut self) {
-        if let Some(event) = self.event.take() {
-            post(&event, self.target_pid);
+        for (index, event) in self.events.iter().rev().enumerate() {
+            if index > 0 {
+                std::thread::sleep(KEY_SETTLE);
+            }
+            post(event, self.target_pid);
         }
     }
 }
@@ -219,6 +256,39 @@ fn text_too_large() -> AdapterError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn side_keys_go_down_in_order_and_release_their_own_device_bits() {
+        let source = event_source().unwrap();
+        let keys = [
+            side_key(&Modifier::LeftMeta).unwrap(),
+            side_key(&Modifier::RightMeta).unwrap(),
+            (0, CGEventFlags::empty()),
+        ];
+        let events = key_events(&source, &keys, CGEventFlags::CGEventFlagShift).unwrap();
+        let shape = |event: &CGEvent| {
+            (
+                event.get_integer_value_field(
+                    core_graphics::event::EventField::KEYBOARD_EVENT_KEYCODE,
+                ),
+                event.get_type() as u32,
+                event.get_flags().bits(),
+            )
+        };
+        let shapes: Vec<_> = events
+            .iter()
+            .map(|(down, up)| (shape(down), shape(up)))
+            .collect();
+
+        assert_eq!(
+            shapes,
+            [
+                ((55, 12, 0x12_0008), (55, 12, 0)),
+                ((54, 12, 0x12_0018), (54, 12, 0x12_0008)),
+                ((0, 10, 0x12_0018), (0, 11, 0x12_0018)),
+            ]
+        );
+    }
 
     #[test]
     fn text_chunks_preserve_unicode_without_splitting_surrogates() {

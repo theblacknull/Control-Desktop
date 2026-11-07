@@ -13,6 +13,8 @@ fn blocked_shortcuts_and_nonblocked_controls() {
         ("f4", vec![Modifier::Alt, Modifier::Shift]),
         ("TAB", vec![Modifier::Alt]),
         ("L", vec![Modifier::Meta]),
+        ("l", vec![Modifier::LeftMeta]),
+        ("f4", vec![Modifier::RightAlt]),
         ("d", vec![Modifier::Meta, Modifier::Shift]),
         ("Delete", vec![Modifier::Alt, Modifier::Ctrl]),
         ("forwarddelete", vec![Modifier::Ctrl, Modifier::Alt]),

@@ -48,7 +48,9 @@ fn press_for_app(
         return post_delivery_process_result(&process, semantic_step(action));
     }
 
-    crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
+    if crate::input::keyboard::side_modifier_key(&combo.key).is_none() {
+        crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
+    }
     if policy.allow_focus_steal {
         crate::system::process::process_identity::require_core(&process)?;
         crate::system::focus::verify_app_focused(pid, deadline)?;
@@ -95,7 +97,12 @@ fn try_simple_key_action(
 }
 
 fn uses_menu_shortcut(combo: &KeyCombo, policy: InteractionPolicy) -> bool {
-    policy.allow_focus_steal && !combo.modifiers.is_empty()
+    policy.allow_focus_steal
+        && !combo.modifiers.is_empty()
+        && combo
+            .modifiers
+            .iter()
+            .all(|modifier| modifier.generic() == *modifier)
 }
 
 fn simple_key_action(combo: &KeyCombo) -> Option<&'static str> {

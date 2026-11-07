@@ -10,6 +10,11 @@ fn combo(key: &str, modifiers: Vec<Modifier>) -> KeyCombo {
 #[test]
 fn every_windows_dangerous_combo_is_blocked() {
     assert!(is_blocked(&combo("f4", vec![Modifier::Alt])), "alt+f4");
+    assert!(
+        is_blocked(&combo("f4", vec![Modifier::RightAlt])),
+        "ropt+f4"
+    );
+    assert!(is_blocked(&combo("l", vec![Modifier::LeftMeta])), "lcmd+l");
     assert!(is_blocked(&combo("l", vec![Modifier::Meta])), "win+l");
     assert!(is_blocked(&combo("d", vec![Modifier::Meta])), "win+d");
     assert!(is_blocked(&combo("tab", vec![Modifier::Alt])), "alt+tab");

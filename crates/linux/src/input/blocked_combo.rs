@@ -9,9 +9,12 @@ pub(crate) fn is_blocked(combo: &KeyCombo) -> bool {
         return false;
     };
     let held = |needed: &[Modifier]| {
-        needed
-            .iter()
-            .all(|modifier| combo.modifiers.contains(modifier))
+        needed.iter().all(|modifier| {
+            combo
+                .modifiers
+                .iter()
+                .any(|held| held.generic() == *modifier)
+        })
     };
     match key {
         0xffc1 | 0xff09 | 0xffbf if held(&[Modifier::Alt]) => true,

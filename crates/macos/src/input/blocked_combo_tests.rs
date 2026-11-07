@@ -11,6 +11,11 @@ fn combo(modifiers: Vec<Modifier>, key: &str) -> KeyCombo {
 #[test]
 fn dangerous_shortcuts_are_blocked() {
     assert!(is_blocked(&combo(vec![Modifier::Meta], "q")));
+    assert!(is_blocked(&combo(vec![Modifier::RightMeta], "q")));
+    assert!(is_blocked(&combo(
+        vec![Modifier::Meta, Modifier::LeftAlt],
+        "esc"
+    )));
     assert!(is_blocked(&combo(
         vec![Modifier::Meta, Modifier::Shift],
         "q"

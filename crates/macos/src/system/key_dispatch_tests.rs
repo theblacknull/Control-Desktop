@@ -73,6 +73,10 @@ fn focus_authorized_press_keeps_menu_shortcuts_for_modified_keys() {
     let headed = agent_desktop_core::InteractionPolicy::headed();
     assert!(uses_menu_shortcut(&key("n", vec![Modifier::Meta]), headed));
     assert!(!uses_menu_shortcut(&key("n", Vec::new()), headed));
+    assert!(!uses_menu_shortcut(
+        &key("n", vec![Modifier::LeftMeta]),
+        headed
+    ));
 }
 
 #[test]

@@ -38,9 +38,9 @@ fn combo_to_string(combo: &KeyCombo) -> String {
 
 fn modifier_name(modifier: &Modifier) -> &'static str {
     match modifier {
-        Modifier::Meta => "cmd",
+        Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => "cmd",
         Modifier::Ctrl => "ctrl",
-        Modifier::Alt => "alt",
+        Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => "alt",
         Modifier::Shift => "shift",
     }
 }

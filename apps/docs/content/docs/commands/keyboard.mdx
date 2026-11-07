@@ -28,7 +28,7 @@ agent-desktop press return --app gnome-calculator
   </tbody>
 </table>
 
-The combo is lowercased and stripped of spaces, so `Ctrl + A` is `ctrl+a`. Modifiers are `meta` (aliases `cmd`, `command`, `super`, `win`: Command on macOS, the Windows key on Windows, Super on Linux), `ctrl` (`control`), `alt` (`option`), and `shift`. A bare uppercase letter adds Shift. Key names that work everywhere are `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, and `f1` to `f12`. Copy is `cmd+c` on macOS and `ctrl+c` elsewhere.
+The combo is lowercased and stripped of spaces, so `Ctrl + A` is `ctrl+a`. Modifiers are `meta` (aliases `cmd`, `command`, `super`, `win`: Command on macOS, the Windows key on Windows, Super on Linux), `ctrl` (`control`), `alt` (`option`), and `shift`. On macOS, `lcmd`, `rcmd`, `lopt` and `ropt` name the left or right Command or Option key, so `press lcmd+rcmd` holds both Command keys. On Windows and Linux they work only before the key, as in `press lcmd+a`, and press the plain modifier. A bare uppercase letter adds Shift. Key names that work everywhere are `return`, `escape`, `tab`, `space`, `delete`, `up`, `down`, `left`, `right`, and `f1` to `f12`. Copy is `cmd+c` on macOS and `ctrl+c` elsewhere.
 
 Keys are physical keyboard input, and `press` does not need `--headed` for an unscoped press. The result is always `delivered_unverified`, because delivery does not prove the shortcut did anything:
 

@@ -38,6 +38,20 @@ fn parse_combo_accepts_long_form_modifier_aliases() {
 }
 
 #[test]
+fn parse_combo_names_the_left_and_right_command_and_option_keys() {
+    let command = parse_combo_normalized("LCMD+RCMD").expect("both command keys");
+    assert_eq!(command.key, "rcmd");
+    assert_eq!(command.modifiers, vec![Modifier::LeftMeta]);
+
+    let option = parse_combo("lopt+ropt+a").expect("both option keys");
+    assert_eq!(
+        option.modifiers,
+        vec![Modifier::LeftAlt, Modifier::RightAlt]
+    );
+    assert_eq!(Modifier::RightAlt.generic(), Modifier::Alt);
+}
+
+#[test]
 fn parse_combo_rejects_unknown_modifier_with_invalid_args_code() {
     let err = parse_combo("hyper+k").expect_err("unknown modifier must fail");
     assert_eq!(err.code(), "INVALID_ARGS");

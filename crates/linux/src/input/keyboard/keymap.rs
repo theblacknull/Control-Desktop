@@ -125,8 +125,8 @@ impl Keymap {
         let row = match modifier {
             Modifier::Shift => SHIFT_ROW,
             Modifier::Ctrl => CONTROL_ROW,
-            Modifier::Alt => ALT_ROW,
-            Modifier::Meta => SUPER_ROW,
+            Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => ALT_ROW,
+            Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => SUPER_ROW,
         };
         let width = usize::from(self.modifier_codes_per_modifier);
         self.modifier_codes

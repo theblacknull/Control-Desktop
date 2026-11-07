@@ -46,17 +46,8 @@ pub fn parse_combo(s: &str) -> Result<KeyCombo, AppError> {
     let mut modifiers = Vec::new();
 
     for &part in &parts[..parts.len() - 1] {
-        let modifier = match part {
-            "meta" | "cmd" | "command" | "super" | "win" => Modifier::Meta,
-            "ctrl" | "control" => Modifier::Ctrl,
-            "alt" | "option" => Modifier::Alt,
-            "shift" => Modifier::Shift,
-            other => {
-                return Err(AppError::invalid_input(format!(
-                    "Unknown modifier: '{other}'"
-                )));
-            }
-        };
+        let modifier = Modifier::from_name(part)
+            .ok_or_else(|| AppError::invalid_input(format!("Unknown modifier: '{part}'")))?;
         modifiers.push(modifier);
     }
 

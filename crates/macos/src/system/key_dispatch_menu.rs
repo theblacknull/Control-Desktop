@@ -181,9 +181,9 @@ fn combo_to_ax_modifiers(combo: &KeyCombo) -> u32 {
         modifiers
             | match modifier {
                 Modifier::Shift => AX_MENU_MODIFIER_SHIFT,
-                Modifier::Alt => AX_MENU_MODIFIER_OPTION,
+                Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => AX_MENU_MODIFIER_OPTION,
                 Modifier::Ctrl => AX_MENU_MODIFIER_CONTROL,
-                Modifier::Meta => 0,
+                Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => 0,
             }
     });
     encoded

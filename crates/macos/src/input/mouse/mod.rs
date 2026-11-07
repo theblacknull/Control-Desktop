@@ -17,9 +17,13 @@ mod imp {
         modifiers.iter().fold(CGEventFlags::empty(), |flags, m| {
             flags
                 | match m {
-                    Modifier::Meta => CGEventFlags::CGEventFlagCommand,
+                    Modifier::Meta | Modifier::LeftMeta | Modifier::RightMeta => {
+                        CGEventFlags::CGEventFlagCommand
+                    }
                     Modifier::Shift => CGEventFlags::CGEventFlagShift,
-                    Modifier::Alt => CGEventFlags::CGEventFlagAlternate,
+                    Modifier::Alt | Modifier::LeftAlt | Modifier::RightAlt => {
+                        CGEventFlags::CGEventFlagAlternate
+                    }
                     Modifier::Ctrl => CGEventFlags::CGEventFlagControl,
                 }
         })

@@ -3,7 +3,7 @@ pub(super) mod keyboard_event;
 pub(crate) mod keyboard_layout;
 pub(crate) mod keyboard_map;
 
-use agent_desktop_core::{AdapterError, Deadline, ErrorCode, KeyCombo};
+use agent_desktop_core::{AdapterError, Deadline, ErrorCode, KeyCombo, Modifier};
 
 #[cfg(target_os = "macos")]
 pub(crate) fn synthesize_key(
@@ -12,14 +12,27 @@ pub(crate) fn synthesize_key(
     deadline: Deadline,
 ) -> Result<(), AdapterError> {
     tracing::debug!(target_pid, "keyboard: synthesize atomic key press");
-    let key_code = crate::input::keyboard::keyboard_map::key_name_to_code(&combo.key)?;
-    crate::input::keyboard::keyboard_event::post_key(
-        key_code,
-        crate::input::mouse::event_flags(&combo.modifiers),
-        target_pid,
-        deadline,
-        (0, 1),
-    )
+    let key_modifier = side_modifier_key(&combo.key);
+    let (mut keys, mut held) = (Vec::new(), Vec::new());
+    for modifier in combo.modifiers.iter().chain(&key_modifier) {
+        match keyboard_event::side_key(modifier) {
+            Some(key) if !keys.contains(&key) => keys.push(key),
+            Some(_) => {}
+            None => held.push(modifier.clone()),
+        }
+    }
+    if key_modifier.is_none() {
+        keys.push((
+            keyboard_map::key_name_to_code(&combo.key)?,
+            core_graphics::event::CGEventFlags::empty(),
+        ));
+    }
+    let flags = crate::input::mouse::event_flags(&held);
+    keyboard_event::post_key(&keys, flags, target_pid, deadline)
+}
+
+pub(crate) fn side_modifier_key(key: &str) -> Option<Modifier> {
+    Modifier::from_name(key).filter(|modifier| modifier.generic() != *modifier)
 }
 
 #[cfg(target_os = "macos")]
