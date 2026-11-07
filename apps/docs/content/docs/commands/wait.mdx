@@ -28,20 +28,20 @@ agent-desktop wait --event KIND [--app NAME] [--window TITLE] [--window-id ID]
     <tr><td><code>--element REF</code></td><td>none</td><td>Wait until the element behind this qualified ref satisfies <code>--predicate</code>.</td></tr>
     <tr><td><code>--predicate NAME</code></td><td><code>exists</code></td><td><code>exists</code>, <code>enabled</code>, <code>visible</code>, <code>actionable</code>, or <code>value</code>. Requires <code>--element</code>.</td></tr>
     <tr><td><code>--value TEXT</code></td><td>none</td><td>Expected value for <code>--predicate value</code>. Required there and rejected otherwise.</td></tr>
-    <tr><td><code>--action NAME</code></td><td><code>click</code></td><td>For <code>--predicate actionable</code>: <code>click</code>, <code>type</code>, <code>set-value</code>, or <code>clear</code>.</td></tr>
+    <tr><td><code>--action NAME</code></td><td><code>click</code></td><td>Requires <code>--element</code> and <code>--predicate actionable</code>. Supports <code>click</code>, <code>type</code>, <code>set-value</code>, or <code>clear</code>.</td></tr>
     <tr><td><code>--window TITLE</code></td><td>none</td><td>Wait until a window whose title contains this text exists. With <code>--event</code>, it narrows the event to an exact title instead.</td></tr>
     <tr><td><code>--text TEXT</code></td><td>none</td><td>Wait until this text appears in the app's tree. With <code>--notification</code>, it filters notification text instead.</td></tr>
     <tr><td><code>--count N</code></td><td>none</td><td>For <code>--text</code>: wait until exactly N nodes match.</td></tr>
     <tr><td><code>--menu</code>, <code>--menu-closed</code></td><td>off</td><td>Wait until a menu surface is open, or dismissed.</td></tr>
     <tr><td><code>--notification</code></td><td>off</td><td>Wait until a new notification arrives.</td></tr>
     <tr><td><code>--event KIND</code></td><td>none</td><td>Wait for a lifecycle signal: <code>window-opened</code>, <code>window-closed</code>, <code>app-launched</code>, <code>app-terminated</code>, <code>focus-changed</code>, <code>surface-appeared</code>, or <code>surface-dismissed</code>.</td></tr>
-    <tr><td><code>--window-id ID</code></td><td>none</td><td>Narrow <code>window-opened</code>, <code>window-closed</code>, or <code>focus-changed</code> to one window.</td></tr>
+    <tr><td><code>--window-id ID</code></td><td>none</td><td>Requires <code>--event</code> and narrows <code>window-opened</code>, <code>window-closed</code>, or <code>focus-changed</code> to one window.</td></tr>
     <tr><td><code>--app NAME</code></td><td>none</td><td>Scope a window, text, menu, notification, or event wait to one application. Element and time waits ignore it.</td></tr>
     <tr><td><code>--timeout MS</code></td><td><code>30000</code></td><td>Timeout for every mode except <code>MS</code>, at most 86400000.</td></tr>
   </tbody>
 </table>
 
-Flags from two modes, or no mode at all, return `INVALID_ARGS`. The wait polls about every 100 ms and wakes early when the platform signals a change. `wait` never changes the application, so a failed wait leaves nothing half-applied; a successful `--text` wait saves a snapshot.
+Flags from two modes, or no mode at all, return `INVALID_ARGS`. `--action` also requires `--element` with `--predicate actionable`; `--window-id` requires `--event` and supports only the three window lifecycle events listed above. The wait polls about every 100 ms and wakes early when the platform signals a change. `wait` never changes the application, so a failed wait leaves nothing half-applied; a successful `--text` wait saves a snapshot.
 
 ### Time
 

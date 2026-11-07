@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 fn binary() -> Command {
@@ -7,9 +8,23 @@ fn binary() -> Command {
 }
 
 fn serve(requests: &[Value], args: &[&str]) -> Vec<Value> {
-    let mut child = binary()
-        .arg("mcp")
-        .args(args)
+    serve_inner(requests, args, None)
+}
+
+#[cfg(target_os = "macos")]
+fn serve_isolated(requests: &[Value], args: &[&str], home: &Path) -> Vec<Value> {
+    serve_inner(requests, args, Some(home))
+}
+
+fn serve_inner(requests: &[Value], args: &[&str], home: Option<&Path>) -> Vec<Value> {
+    let mut command = binary();
+    command.arg("mcp").args(args);
+    if let Some(home) = home {
+        command
+            .env("AGENT_DESKTOP_HOME", home)
+            .env_remove("AGENT_DESKTOP_SESSION");
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -113,4 +128,47 @@ fn malformed_messages_get_errors_and_the_server_keeps_serving() {
         "{nul}"
     );
     assert_eq!(responses[4]["result"]["isError"], false);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "requires Accessibility permissions"]
+fn mcp_wait_orphan_options_return_core_errors() {
+    let home = std::env::temp_dir().join(format!(
+        "agent-desktop-mcp-wait-options-{}",
+        std::process::id()
+    ));
+    let responses = serve_isolated(
+        &[
+            json!({ "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": { "protocolVersion": "2025-11-25", "capabilities": {},
+                                "clientInfo": { "name": "test", "version": "0" } } }),
+            json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+            call(2, "desktop_wait", json!({ "ms": 0, "action": "type" })),
+            call(3, "desktop_wait", json!({ "ms": 0, "window_id": "w123" })),
+            call(4, "desktop_wait", json!({ "ms": 0 })),
+        ],
+        &[],
+        &home,
+    );
+    let _ = std::fs::remove_dir_all(home);
+
+    assert_eq!(responses.len(), 4, "{responses:?}");
+    for response in &responses[1..3] {
+        let result = &response["result"];
+        assert_eq!(result["isError"], true, "{result}");
+        assert_eq!(result["structuredContent"]["command"], "wait", "{result}");
+        assert_eq!(result["structuredContent"]["ok"], false, "{result}");
+        assert_eq!(
+            result["structuredContent"]["error"]["code"], "INVALID_ARGS",
+            "{result}"
+        );
+    }
+    let pause = &responses[3]["result"];
+    assert_eq!(pause["isError"], false, "{pause}");
+    assert_eq!(pause["structuredContent"]["command"], "wait", "{pause}");
+    assert_eq!(
+        pause["structuredContent"]["data"]["waited_ms"], 0,
+        "{pause}"
+    );
 }
