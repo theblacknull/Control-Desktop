@@ -1,9 +1,5 @@
 use crate::refs::refs_lock::RefStoreLock;
-use crate::{
-    AppError, Deadline,
-    storage::private_file::{open_private_lock, read_private_bounded},
-};
-use std::io::Write;
+use crate::{AppError, Deadline, storage::private_file::read_private_bounded};
 use std::path::{Path, PathBuf};
 
 pub(crate) const MAX_SESSION_BYTES: usize = 32 * 1024 * 1024;
@@ -64,11 +60,10 @@ impl TraceWriteBudget {
                 "Start a new session to continue recording; the existing trace remains readable.",
             ));
         }
-        let mut ledger = open_private_lock(&self.directory.join(LEDGER), true)?;
-        ledger.set_len(0)?;
-        ledger.write_all(&serde_json::to_vec(&self.usage)?)?;
-        ledger.sync_data()?;
-        Ok(())
+        crate::refs::write_private_file(
+            &self.directory.join(LEDGER),
+            &serde_json::to_vec(&self.usage)?,
+        )
     }
 }
 

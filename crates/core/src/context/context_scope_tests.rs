@@ -252,3 +252,26 @@ fn command_end_omits_secret_and_huge_error_messages() {
     assert!(body.len() < 4096);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn a_command_does_not_trace_into_a_session_reaped_while_it_waited_for_its_lease() {
+    let guard = crate::refs::refs_test_support::HomeGuard::new();
+    let home = guard.path().to_path_buf();
+    let manifest = start_session(StartSessionOptions {
+        trace: SessionTraceMode::On,
+        ..Default::default()
+    })
+    .expect("session starts");
+    let dir = crate::session::session_dir(&manifest.id).unwrap();
+    let lock = crate::refs::refs_lock::RefStoreLock::acquire(&dir.join("refstore.lock")).unwrap();
+    let id = manifest.id.clone();
+    let command = std::thread::spawn(move || {
+        crate::refs::set_home_override(Some(home));
+        CommandContext::new(Some(id), None, false)
+    });
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::fs::remove_dir_all(&dir).unwrap();
+    drop(lock);
+
+    assert!(!command.join().unwrap().unwrap().trace_enabled());
+}

@@ -89,9 +89,9 @@ impl CommandContext {
         if let Some(id) = session_id.as_deref() {
             validate_session_id(id)?;
         }
+        let session = acquire_session_scope(session_id.clone(), None)?;
         let (segment_dir, artifacts_full) =
             session_trace_state(session_id.as_deref(), trace_path.is_some())?;
-        let session = acquire_session_scope(session_id, None)?;
         let cursor_overlay =
             session::cursor_overlay_for_session(session.as_ref().map(|scope| scope.id.as_str()))?;
         Ok(Self {
@@ -243,6 +243,11 @@ impl CommandContext {
         let reuses_parent_session = session_id.as_deref() == self.session_id();
         let reuses_parent_trace = reuses_parent_session
             || (self.trace.pending_file_path().is_some() && self.trace.has_sink());
+        let session = if reuses_parent_session {
+            self.session.clone()
+        } else {
+            acquire_session_scope(session_id.clone(), self.inherited_deadline)?
+        };
         let (trace, artifacts_full) = if reuses_parent_trace {
             (self.trace.clone(), self.artifacts_full)
         } else {
@@ -251,11 +256,6 @@ impl CommandContext {
                 self.trace.clone_with_session_segment(segment_dir)?,
                 artifacts_full,
             )
-        };
-        let session = if reuses_parent_session {
-            self.session.clone()
-        } else {
-            acquire_session_scope(session_id, self.inherited_deadline)?
         };
         let cursor_overlay = if reuses_parent_session {
             self.options.cursor_overlay.clone()

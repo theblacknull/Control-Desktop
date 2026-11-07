@@ -109,15 +109,15 @@ pub(crate) fn wait_for_event(
                             input.window_id.as_deref(),
                             input.window_title.as_deref(),
                             filter.process.as_ref().map(|process| process.pid),
-                        ) {
-                            if confirm_app_terminated(adapter, found, diff_base, deadline) {
-                                let elapsed = start.elapsed().as_millis();
-                                return Ok(json!({
-                                    "found": true,
-                                    "event": serde_json::to_value(found)?,
-                                    "elapsed_ms": elapsed,
-                                }));
-                            }
+                        )
+                        .find(|found| confirm_app_terminated(adapter, found, diff_base, deadline))
+                        {
+                            let elapsed = start.elapsed().as_millis();
+                            return Ok(json!({
+                                "found": true,
+                                "event": serde_json::to_value(found)?,
+                                "elapsed_ms": elapsed,
+                            }));
                         }
                         if disappearance {
                             seen = Some(merge_signal_baseline(diff_base, &current));
@@ -211,8 +211,8 @@ fn find_match<'a>(
     window_id: Option<&str>,
     window_title: Option<&str>,
     pinned_pid: Option<crate::ProcessId>,
-) -> Option<&'a UiEvent> {
-    events.iter().find(|event| {
+) -> impl Iterator<Item = &'a UiEvent> {
+    events.iter().filter(move |event| {
         if !requested.same_variant(&event.kind) {
             return false;
         }

@@ -118,6 +118,8 @@ pub fn set_cursor_overlay(
     session_id: &str,
     cursor_overlay: CursorOverlayConfig,
 ) -> Result<SessionManifest, AppError> {
+    validate_session_id(session_id)?;
+    let _lock = liveness::lock_started_session(session_id, crate::Deadline::standard()?)?;
     let mut manifest = read_manifest(session_id)?.ok_or_else(|| {
         AppError::invalid_input_with_suggestion(
             format!("Session '{session_id}' has no manifest"),
@@ -327,7 +329,7 @@ pub fn start_session(options: StartSessionOptions) -> Result<SessionManifest, Ap
 
 pub fn end_session(session_id: &str) -> Result<SessionManifest, AppError> {
     validate_session_id(session_id)?;
-    let _lease = acquire_liveness_lease(session_id)?;
+    let _lock = liveness::lock_started_session(session_id, crate::Deadline::standard()?)?;
     let id = session_id.to_string();
     let mut manifest = read_manifest(&id)?.ok_or_else(|| {
         AppError::invalid_input_with_suggestion(

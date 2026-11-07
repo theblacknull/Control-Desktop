@@ -6,6 +6,7 @@ struct LivenessAdapter {
     snapshots: Vec<SignalBaseline>,
     calls: std::sync::Mutex<usize>,
     process_state: Result<ProcessState, ()>,
+    running: Vec<crate::ProcessId>,
     process_state_calls: std::sync::Mutex<Vec<crate::ProcessIdentity>>,
 }
 
@@ -15,6 +16,7 @@ impl LivenessAdapter {
             snapshots,
             calls: std::sync::Mutex::new(0),
             process_state,
+            running: Vec::new(),
             process_state_calls: std::sync::Mutex::new(Vec::new()),
         }
     }
@@ -41,7 +43,11 @@ impl SystemOps for LivenessAdapter {
         process: crate::ProcessIdentity,
         _deadline: crate::Deadline,
     ) -> Result<ProcessState, AdapterError> {
+        let running = self.running.contains(&process.pid);
         self.process_state_calls.lock().unwrap().push(process);
+        if running {
+            return Ok(ProcessState::Running);
+        }
         self.process_state
             .map_err(|()| AdapterError::not_supported("process_state"))
     }
@@ -90,6 +96,26 @@ fn close_to_tray_is_suppressed_but_a_genuine_exit_still_fires() {
         exited_adapter.process_state_calls.lock().unwrap()[0].instance,
         "hides-into-tray"
     );
+}
+
+#[test]
+fn an_unscoped_wait_reports_an_exit_behind_an_app_that_closed_to_tray() {
+    let seed = baseline_with_apps(vec![
+        terminating_app(41, "tray"),
+        terminating_app(42, "exited"),
+    ]);
+    let mut adapter = LivenessAdapter::new(
+        vec![empty_baseline()],
+        Ok(ProcessState::Exited { code: None }),
+    );
+    adapter.running.push(crate::ProcessId::new(41));
+    let mut request = input("app-terminated", None);
+    request.timeout_ms = 300;
+
+    let result = wait_for_event(request, &adapter, Some(Ok(seed))).unwrap();
+
+    assert_eq!(result["found"], true);
+    assert_eq!(result["event"]["pid"], 42);
 }
 
 #[test]

@@ -275,7 +275,11 @@ fn seed_session_refs(id: &str) -> (std::path::PathBuf, String) {
     let dir = session_dir(id).unwrap();
     let refmaps = dir.join("trace").join("refmaps");
     std::fs::create_dir_all(&refmaps).unwrap();
-    std::fs::write(refmaps.join(format!("{snapshot_id}.json")), b"{}").unwrap();
+    std::fs::copy(
+        dir.join("snapshots").join(&snapshot_id).join("refmap.json"),
+        refmaps.join(format!("{snapshot_id}.json")),
+    )
+    .unwrap();
     std::fs::write(
         dir.join("trace").join("42-1.jsonl"),
         b"{\"event\":\"command.start\"}\n",
@@ -321,7 +325,11 @@ fn a_refmap_the_trace_never_copied_survives_ending_a_full_session() {
 
     let refmaps = dir.join("trace").join("refmaps");
     std::fs::create_dir_all(&refmaps).unwrap();
-    std::fs::write(refmaps.join(format!("{copied}.json")), b"{}").unwrap();
+    std::fs::copy(
+        dir.join("snapshots").join(&copied).join("refmap.json"),
+        refmaps.join(format!("{copied}.json")),
+    )
+    .unwrap();
 
     end_session(&manifest.id).unwrap();
 

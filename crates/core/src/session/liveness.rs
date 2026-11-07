@@ -31,19 +31,31 @@ impl Drop for LeaseInner {
     }
 }
 
+/// Takes the session's refstore lock when the session has a manifest. Holding it
+/// excludes GC, lease creation and every other manifest read-modify-write.
+pub(super) fn lock_started_session(
+    session_id: &str,
+    deadline: Deadline,
+) -> Result<Option<(RefStoreLock, PathBuf)>, AppError> {
+    let store = crate::refs::refs_store::RefStore::for_session(Some(session_id))?;
+    let base = store.base_dir().to_path_buf();
+    if !base.is_dir() {
+        return Ok(None);
+    }
+    let lock = RefStoreLock::acquire_with_deadline(&base.join("refstore.lock"), deadline)?;
+    if super::read_manifest(session_id)?.is_none() {
+        return Ok(None);
+    }
+    Ok(Some((lock, base)))
+}
+
 pub fn acquire(
     session_id: &str,
     deadline: Deadline,
 ) -> Result<Option<SessionLivenessLease>, AppError> {
-    let store = crate::refs::refs_store::RefStore::for_session(Some(session_id))?;
-    let base = store.base_dir();
-    if !base.is_dir() {
+    let Some((_store_lock, base)) = lock_started_session(session_id, deadline)? else {
         return Ok(None);
-    }
-    let _store_lock = RefStoreLock::acquire_with_deadline(&base.join("refstore.lock"), deadline)?;
-    if super::read_manifest(session_id)?.is_none() {
-        return Ok(None);
-    }
+    };
     let directory = base.join("liveness");
     crate::storage::private_file_parent::ensure_private(&directory)?;
     let path = directory.join(lease_filename());

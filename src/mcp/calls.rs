@@ -13,9 +13,16 @@ const EXIT_POLL: Duration = Duration::from_millis(20);
 /// Output pipes of a started call.
 pub(crate) type Pipes = (Option<ChildStdout>, Option<ChildStderr>);
 
-/// Each admitted request id, with the child process its call started once it has started one.
+/// Where an admitted call is. A cancelled id stays occupied until its own call finishes.
+enum Slot {
+    Admitted,
+    Running(Child),
+    Cancelled,
+}
+
+/// Each admitted request id with the state of its call.
 #[derive(Default)]
-pub(crate) struct Calls(Mutex<HashMap<String, Option<Child>>>);
+pub(crate) struct Calls(Mutex<HashMap<String, Slot>>);
 
 impl Calls {
     /// Admits `id` before its call starts; false when a call with that id is already in flight.
@@ -23,7 +30,7 @@ impl Calls {
         match self.lock().entry(id.to_string()) {
             Entry::Occupied(_) => false,
             Entry::Vacant(entry) => {
-                entry.insert(None);
+                entry.insert(Slot::Admitted);
                 true
             }
         }
@@ -35,32 +42,48 @@ impl Calls {
     pub(crate) fn start(&self, id: &Value, command: &mut Command) -> Option<io::Result<Pipes>> {
         let mut calls = self.lock();
         let slot = calls.get_mut(&id.to_string())?;
+        if matches!(slot, Slot::Cancelled) {
+            return None;
+        }
         Some(command.spawn().map(|mut child| {
             let pipes = (child.stdout.take(), child.stderr.take());
-            *slot = Some(child);
+            *slot = Slot::Running(child);
             pipes
         }))
     }
 
     /// Takes back the child of `id` after its output closed, or `None` when `id` was cancelled.
     pub(crate) fn take(&self, id: &Value) -> Option<Child> {
-        self.lock().get_mut(&id.to_string()).and_then(Option::take)
+        let mut calls = self.lock();
+        let slot = calls.get_mut(&id.to_string())?;
+        match std::mem::replace(slot, Slot::Admitted) {
+            Slot::Running(child) => Some(child),
+            other => {
+                *slot = other;
+                None
+            }
+        }
     }
 
     /// Cancels `id`; an unknown id is ignored. A started child is stopped on its own thread by `terminate`.
     pub(crate) fn cancel(&self, id: &Value) {
-        let child = self.lock().remove(&id.to_string()).flatten();
-        if let Some(child) = child {
+        let slot = self
+            .lock()
+            .get_mut(&id.to_string())
+            .map(|slot| std::mem::replace(slot, Slot::Cancelled));
+        if let Some(Slot::Running(child)) = slot {
             std::thread::spawn(move || terminate(child));
         }
     }
 
     /// Releases `id` once its call has returned; false when it was cancelled, so no response is due.
     pub(crate) fn finish(&self, id: &Value) -> bool {
-        self.lock().remove(&id.to_string()).is_some()
+        self.lock()
+            .remove(&id.to_string())
+            .is_some_and(|slot| !matches!(slot, Slot::Cancelled))
     }
 
-    fn lock(&self) -> MutexGuard<'_, HashMap<String, Option<Child>>> {
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, Slot>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }

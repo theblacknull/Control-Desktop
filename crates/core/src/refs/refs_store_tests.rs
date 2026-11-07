@@ -288,3 +288,27 @@ mod pruning_tests;
 
 #[path = "refs_store_session_tests.rs"]
 mod session_tests;
+
+#[test]
+fn discarding_scaffolding_keeps_a_snapshot_drilled_after_its_trace_copy() {
+    let _guard = HomeGuard::new();
+    let store = RefStore::for_session(Some("drilled")).unwrap();
+    let snapshot_id = store.save_new_snapshot(&map_with("Root")).unwrap();
+    let refmaps = crate::trace::trace_artifacts::refmap_artifact_dir(&store.trace_dir());
+    std::fs::create_dir_all(&refmaps).unwrap();
+    std::fs::copy(
+        store.snapshot_path(&snapshot_id),
+        refmaps.join(format!("{snapshot_id}.json")),
+    )
+    .unwrap();
+    store
+        .update_existing_snapshot(&snapshot_id, "@e1", &entry("Root"), |map| {
+            map.allocate(entry("Drilled"));
+            Ok(())
+        })
+        .unwrap();
+
+    store.discard_duplicated_ref_scaffolding();
+
+    assert!(store.snapshot_path(&snapshot_id).is_file());
+}

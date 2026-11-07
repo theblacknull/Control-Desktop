@@ -24,6 +24,16 @@ fn a_call_cancelled_before_it_starts_never_spawns_and_gets_no_response() {
     assert!(!calls.finish(&json!(7)));
 }
 
+#[test]
+fn a_cancelled_id_stays_taken_until_its_own_call_finishes() {
+    let calls = Calls::default();
+    assert!(calls.admit(&json!(5)));
+    calls.cancel(&json!(5));
+    assert!(!calls.admit(&json!(5)));
+    assert!(!calls.finish(&json!(5)));
+    assert!(calls.admit(&json!(5)));
+}
+
 #[cfg(unix)]
 #[test]
 fn a_cancelled_child_gets_sigterm_before_any_kill() {

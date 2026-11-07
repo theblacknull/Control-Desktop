@@ -148,3 +148,31 @@ fn invalid_profile_motion_falls_back_to_session_config() {
         master
     );
 }
+
+#[test]
+fn a_cursor_overlay_write_racing_session_end_cannot_reopen_the_session() {
+    let guard = HomeGuard::new();
+    let home = guard.path().to_path_buf();
+    let manifest = start_session(StartSessionOptions::default()).unwrap();
+    let lock = crate::refs::refs_lock::RefStoreLock::acquire(
+        &session_dir(&manifest.id).unwrap().join("refstore.lock"),
+    )
+    .unwrap();
+    let id = manifest.id.clone();
+    let writer = std::thread::spawn(move || {
+        crate::refs::set_home_override(Some(home));
+        set_cursor_overlay(&id, crate::CursorOverlayConfig::default())
+    });
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    let mut ended = read_manifest(&manifest.id).unwrap().unwrap();
+    ended.ended_at = Some(now_millis());
+    write_manifest(&ended).unwrap();
+    drop(lock);
+
+    assert!(writer.join().unwrap().is_err());
+    assert!(
+        read_manifest(&manifest.id)
+            .unwrap()
+            .is_some_and(|m| m.ended_at.is_some())
+    );
+}

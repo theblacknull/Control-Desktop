@@ -91,7 +91,7 @@ pub(crate) fn dispatch_resolved_landing(
     let preflight = match stable_preflight(&initial_target, &request) {
         Ok(preflight) => preflight,
         Err(error) => {
-            let error = into_adapter_error(error);
+            let error = mark_pre_dispatch_resolution_failure(into_adapter_error(error));
             if !crate::ref_action::ref_action_wait_evidence::should_scroll_after_preflight(
                 &request, &error,
             ) {

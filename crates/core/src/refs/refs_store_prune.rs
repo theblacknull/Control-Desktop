@@ -36,7 +36,7 @@ impl RefStore {
         );
     }
 
-    /// Drops only the refmaps the trace already holds a copy of, leaving every
+    /// Drops only the refmaps the trace holds a byte-identical copy of, leaving every
     /// other artifact in place. Being in `ArtifactsMode::Full` is not on its own
     /// proof that a copy exists: the artifact budget and a serialisation failure
     /// both skip a copy and report success, so a session that recorded more
@@ -57,7 +57,9 @@ impl RefStore {
             if validate_snapshot_id(&id).is_err() {
                 continue;
             }
-            if duplicates.join(format!("{id}.json")).is_file() {
+            let copy = std::fs::read(duplicates.join(format!("{id}.json")));
+            let original = std::fs::read(entry.path().join("refmap.json"));
+            if copy.is_ok_and(|copy| original.is_ok_and(|original| copy == original)) {
                 let _ = std::fs::remove_dir_all(entry.path());
             }
         }
