@@ -21,7 +21,7 @@ pub fn element_token(entry: &RefEntry) -> Option<&str> {
 /// Whether a retained object value is a genuine element token rather than a
 /// retained location.
 pub fn is_element_token(token: &str) -> bool {
-    token.starts_with(ELEMENT_TOKEN_PREFIX)
+    token.starts_with(ELEMENT_TOKEN_PREFIX) || token.starts_with("axtok2:")
 }
 
 pub fn has_meaningful_identity(entry: &RefEntry) -> bool {

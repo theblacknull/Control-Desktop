@@ -50,8 +50,8 @@ pub(in crate::tree) fn resolve_saved_token(
         TokenLookup::NotAToken => Ok(None),
         TokenLookup::Unavailable => Err(stale_token_error(entry, RetainedMismatch::Dead)),
         TokenLookup::Dead => Err(stale_token_error(entry, RetainedMismatch::Dead)),
-        TokenLookup::Live(element) => {
-            verify_token_element(entry, &element, deadline)?;
+        TokenLookup::Live(element, owner) => {
+            verify_token_element(entry, &element, owner, deadline)?;
             Ok(Some(element.into_native_handle()))
         }
     }
@@ -61,6 +61,7 @@ pub(in crate::tree) fn resolve_saved_token(
 fn verify_token_element(
     entry: &RefEntry,
     element: &AXElement,
+    owner: Option<crate::system::process::process_identity::ProcessIdentity>,
     deadline: std::time::Instant,
 ) -> Result<(), AdapterError> {
     let pid = crate::tree::properties::ax_ipc::pid(element, deadline)
@@ -86,8 +87,13 @@ fn verify_token_element(
         subrole: subrole.as_deref(),
         native_id: native_id.as_deref(),
     };
-    if let Some(mismatch) = token_mismatch(entry, &facts) {
+    if let Some(mismatch) = token_mismatch(entry, &facts, owner.map(|owner| owner.pid())) {
         return Err(stale_token_error(entry, mismatch));
+    }
+    if let Some(owner) = owner {
+        if !owner.still_matches()? {
+            return Err(stale_token_error(entry, RetainedMismatch::Dead));
+        }
     }
     Ok(())
 }
@@ -115,8 +121,10 @@ fn destroyed_as_stale(entry: &RefEntry, error: AdapterError) -> AdapterError {
 pub(in crate::tree) fn token_mismatch(
     entry: &RefEntry,
     facts: &RetainedFacts<'_>,
+    owner_pid: Option<i32>,
 ) -> Option<RetainedMismatch> {
-    let expected_pid = crate::system::process::process_identity::to_pid_t(entry.process.pid).ok();
+    let expected_pid = owner_pid
+        .or_else(|| crate::system::process::process_identity::to_pid_t(entry.process.pid).ok());
     if expected_pid != Some(facts.pid) {
         return Some(RetainedMismatch::Pid);
     }

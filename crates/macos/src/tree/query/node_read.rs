@@ -198,7 +198,7 @@ pub(crate) fn read_node(
         } else {
             LocatorField::Unknown
         },
-        identifiers: crate::tree::resolve::retained::evidence(element, identifiers),
+        identifiers: crate::tree::resolve::retained::evidence(element, identifiers, deadline),
         states: if !requirements.states || read.status.states_unknown() {
             LocatorField::Unknown
         } else {

@@ -309,6 +309,7 @@ pub(super) mod resolve_search;
 pub(super) mod resolve_source_app;
 pub(crate) mod retained;
 pub(super) mod retained_resolve;
+pub(super) mod retained_token;
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod tests;

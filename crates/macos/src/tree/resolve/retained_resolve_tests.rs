@@ -1,6 +1,6 @@
 use super::{
     RetainedFacts, RetainedMismatch, native_identifier_attribute, resolve_saved_token,
-    token_mismatch,
+    token_mismatch as match_token,
 };
 use agent_desktop_core::{
     ElementIdentifier, IdentifierKind, ProcessId, RefCapabilities, RefEntry, RefEntryIdentity,
@@ -145,4 +145,36 @@ fn a_ref_without_a_token_keeps_the_attribute_path() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
 
     assert!(resolve_saved_token(&stored, deadline).unwrap().is_none());
+}
+
+fn token_mismatch(entry: &RefEntry, facts: &RetainedFacts<'_>) -> Option<RetainedMismatch> {
+    match_token(entry, facts, None)
+}
+
+#[test]
+fn hosted_control_uses_its_saved_owner_without_weakening_identity_checks() {
+    let stored = entry("textfield");
+    let actual = facts(8, Some("AXTextField"), Some("AXSecureTextField"), None);
+    assert_eq!(match_token(&stored, &actual, Some(8)), None);
+    assert_eq!(
+        match_token(&stored, &actual, Some(9)),
+        Some(RetainedMismatch::Pid)
+    );
+    assert_eq!(
+        match_token(&stored, &actual, None),
+        Some(RetainedMismatch::Pid)
+    );
+    assert_eq!(
+        match_token(&entry("button"), &actual, Some(8)),
+        Some(RetainedMismatch::Role)
+    );
+    let mut identified = stored;
+    identified.identity.native_id = Some(ElementIdentifier {
+        kind: IdentifierKind::AxIdentifier,
+        value: "password".into(),
+    });
+    assert_eq!(
+        match_token(&identified, &actual, Some(8)),
+        Some(RetainedMismatch::NativeId)
+    );
 }
