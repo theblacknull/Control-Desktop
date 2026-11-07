@@ -340,3 +340,7 @@ mod deadline_tests;
 #[cfg(test)]
 #[path = "wait_window_retry_tests.rs"]
 mod window_retry_tests;
+
+#[cfg(test)]
+#[path = "wait_option_tests.rs"]
+mod option_tests;

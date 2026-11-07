@@ -277,3 +277,33 @@ fn inherited_batch_deadline_caps_sleep_without_variant_rewriting() {
 
     assert_eq!(output["results"][0]["error"]["code"], "TIMEOUT");
 }
+
+#[test]
+fn orphan_wait_options_fail_as_completed_batch_entries() {
+    let output = execute(
+        args(
+            json!([
+                {"command": "wait", "args": {"ms": 0, "action": "type"}},
+                {"command": "wait", "args": {"ms": 0, "window_id": "w123"}}
+            ]),
+            60_000,
+        ),
+        &adapter(),
+        &PermissionReport::default(),
+        &CommandContext::default(),
+    )
+    .expect("wait argument errors remain nested in the batch result");
+
+    assert_eq!(output["total_entries"], 2);
+    assert_eq!(output["completed_entries"], 2);
+    assert_eq!(output["not_started_entries"], 0);
+    assert_eq!(output["semantics"]["atomic"], false);
+    assert_eq!(output["semantics"]["order"], "sequential");
+    assert!(output.get("stopped").is_none());
+    for entry in output["results"].as_array().expect("batch results") {
+        assert_eq!(entry["execution"], "completed", "{entry}");
+        assert_eq!(entry["ok"], false, "{entry}");
+        assert_eq!(entry["error"]["code"], "INVALID_ARGS", "{entry}");
+        assert!(entry.get("data").is_none(), "{entry}");
+    }
+}

@@ -84,6 +84,28 @@ fn ad_wait_ms_mode_returns_ok_from_worker_thread() {
 }
 
 #[test]
+fn ad_wait_orphan_action_writes_invalid_args_envelope() {
+    let action = std::ffi::CString::new("type").expect("valid action");
+    with_adapter(|adapter| unsafe {
+        let mut args = wait_args(Some(0), std::ptr::null(), 500);
+        args.predicate.action = action.as_ptr();
+        let mut out: *mut std::os::raw::c_char = std::ptr::null_mut();
+        let rc = ad_wait(adapter, &args, &mut out);
+
+        assert_eq!(rc, AdResult::ErrInvalidArgs);
+        assert_eq!(ad_last_error_code(), rc);
+        assert!(!out.is_null(), "command errors allocate a JSON envelope");
+        let envelope: serde_json::Value =
+            serde_json::from_str(&CStr::from_ptr(out).to_string_lossy())
+                .expect("error envelope is valid JSON");
+        assert_eq!(envelope["ok"], false);
+        assert_eq!(envelope["command"], "wait");
+        assert_eq!(envelope["error"]["code"], "INVALID_ARGS");
+        ad_free_string(out);
+    });
+}
+
+#[test]
 fn ad_wait_command_error_writes_error_envelope_into_out() {
     with_adapter(|adapter| unsafe {
         let elem = std::ffi::CString::new("__nonexistent_element__").unwrap();

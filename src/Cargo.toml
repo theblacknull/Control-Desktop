@@ -59,6 +59,10 @@ name = "mcp_process"
 path = "tests/mcp_process.rs"
 
 [[test]]
+name = "wait_options_process"
+path = "tests/wait_options_process.rs"
+
+[[test]]
 name = "command_host_absent"
 path = "tests/command_host_absent.rs"
 
