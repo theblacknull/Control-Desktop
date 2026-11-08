@@ -10,8 +10,10 @@
  */
 import { fileURLToPath } from "node:url";
 
-import { describe } from "./screen.mjs";
-import { clipboardGuard, execute, observe, startCursor, stopCursor } from "./desktop.mjs";
+import { setTimeout as sleep } from "node:timers/promises";
+
+import { describe, windowSuccessor } from "./screen.mjs";
+import { clipboardGuard, execute, listWindows, observe, startCursor, stopCursor } from "./desktop.mjs";
 import {
   TERMINALS,
   typesafeApi,
@@ -76,6 +78,34 @@ const redactInputs = (value, inputs) => {
 
 const windowStop = (error, windowId) => (windowId ? WINDOW_STOPS[error.code] ?? null : null);
 
+/** How long a pinned run waits for a replacement window after its window goes. */
+const followWindowMs = (raw) => {
+  const value = Number(raw ?? 3000);
+  if (!Number.isFinite(value) || value < 0 || value > 60000) {
+    throw new Error(`JEV_WINDOW_FOLLOW_MS must be a number of milliseconds from 0 to 60000, not ${JSON.stringify(raw)}`);
+  }
+  return value;
+};
+const FOLLOW_MS = followWindowMs(process.env.JEV_WINDOW_FOLLOW_MS);
+/** Errors a read of a window that is gone, or being torn down, comes back with. */
+const GONE_CODES = new Set(["WINDOW_NOT_FOUND", "ACTION_NOT_SUPPORTED"]);
+
+/**
+ * After an action, a pinned window that can no longer be read may have been
+ * replaced by the app. Polls the app's windows until windowSuccessor accounts
+ * for the pinned one or FOLLOW_MS passes. The run follows a single replacement,
+ * drops its region (a ref root in the old window means nothing in the new one),
+ * and otherwise stops rather than guess.
+ */
+const awaitSuccessor = async (app, pinned, before) => {
+  const deadline = Date.now() + FOLLOW_MS;
+  for (;;) {
+    const seen = windowSuccessor(before, listWindows(app), pinned);
+    if (["present", "replaced", "ambiguous"].includes(seen.state) || Date.now() >= deadline) return seen;
+    await sleep(250);
+  }
+};
+
 export const run = async function* (
   goal,
   app,
@@ -90,14 +120,17 @@ export const run = async function* (
     steps: 0, calls: 0, history: [], operation: null, root,
     suppliedInputs: new Set(knownInputs.filter((value) => typeof value === "string" && value.trim())),
   };
+  let pinned = windowId;
   try {
     let last = null;
     for (;;) {
       let seen;
       try {
-        seen = observe(app, state.root, windowId);
+        seen = observe(app, state.root, pinned);
       } catch (error) {
-        const stop = windowStop(error, windowId);
+        let stop = windowStop(error, pinned);
+        if (!stop && pinned && error.code === "ACTION_NOT_SUPPORTED"
+          && windowSuccessor(null, listWindows(app), pinned).state !== "present") stop = "window_closed";
         if (!stop) throw error;
         yield { stop, screen: last, history: state.history };
         return;
@@ -173,7 +206,8 @@ export const run = async function* (
           return;
         }
       }
-      const outcome = await execute({ app, windowId }, state.operation, node, value, clipboard);
+      const windowsBefore = pinned ? listWindows(app) : null;
+      const outcome = await execute({ app, windowId: pinned }, state.operation, node, value, clipboard);
       state.steps += 1;
       let turn = {
         step: state.steps,
@@ -201,13 +235,40 @@ export const run = async function* (
       if ("root" in outcome) state.root = outcome.root;
       let after;
       try {
-        after = "root" in outcome ? null : observe(app, state.root, windowId);
+        after = "root" in outcome ? null : observe(app, state.root, pinned);
       } catch (error) {
-        const stop = windowStop(error, windowId);
-        if (!stop) throw error;
+        if (!pinned || !GONE_CODES.has(error.code)) {
+          const stop = windowStop(error, pinned);
+          if (!stop) throw error;
+          turn.changed = true;
+          yield { turn, screen };
+          yield { stop, screen, history: state.history };
+          return;
+        }
+        const next = await awaitSuccessor(app, pinned, windowsBefore);
+        if (next.state === "present") throw error;
         turn.changed = true;
+        if (next.state === "replaced") {
+          const change = redactInputs({ from: pinned, to: next.id, title: next.title }, state.suppliedInputs);
+          turn.window_changed = { from: change.from, to: change.to };
+          yield { turn, screen };
+          yield { window_changed: change };
+          pinned = next.id;
+          state.root = null;
+          const settled = shouldStop(state);
+          if (settled) {
+            yield { stop: settled, screen, history: state.history };
+            return;
+          }
+          continue;
+        }
         yield { turn, screen };
-        yield { stop, screen, history: state.history };
+        yield {
+          stop: next.state === "ambiguous" ? "window_ambiguous" : "window_closed",
+          screen,
+          ...(next.candidates ? { candidates: next.candidates } : {}),
+          history: state.history,
+        };
         return;
       }
       turn.changed = "root" in outcome || fingerprint(after.nodes) !== before;

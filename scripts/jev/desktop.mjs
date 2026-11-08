@@ -9,7 +9,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { collect, offerable, outsideWindow, overlayRole } from "./screen.mjs";
+import {
+  collect, DETACHED_SURFACE, detachedOverlay, offerable, outsideWindow, overlayRole, surfaceListed,
+} from "./screen.mjs";
 import { ARGV } from "./policy.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -47,6 +49,12 @@ export const startCursor = (label) => {
 
 export const stopCursor = () => cli("cursor-overlay", "disable");
 
+/** The app's windows as `list-windows` reports them, or null when unreadable. */
+export const listWindows = (app) => {
+  const listed = cli("list-windows", "--app", app);
+  return listed.ok && Array.isArray(listed.data) ? listed.data : null;
+};
+
 /**
  * A window is read shallowly until the policy asks to go deeper, so a document
  * holding thousands of elements costs the same first look as a panel holding
@@ -66,13 +74,26 @@ export const observe = (app, root, windowId = null) => {
   }
   if (!snap.ok && snap.error?.code !== "WINDOW_NOT_FOUND") snap = cli(...base, "--max-depth", "4");
   if (!snap.ok) throw unreadable("the screen", snap.error);
-  const surface = root ? null : overlayRole(snap.data.tree);
+  let surface = root ? null : overlayRole(snap.data.tree);
   if (surface) {
     const scoped = cli("snapshot", ...scope, "--surface", surface, "-i", "--compact", "--include-bounds");
     if (scoped.ok && windowId && outsideWindow(scoped.data, windowId)) {
       throw Object.assign(new Error(`the ${surface} is not in window ${windowId}`), { code: "SURFACE_OUTSIDE_WINDOW" });
     }
     if (scoped.ok) snap = scoped;
+  } else if (!root) {
+    const listed = cli("list-surfaces", "--app", app);
+    if (listed.ok && surfaceListed(listed.data)) {
+      const scoped = cli("snapshot", ...scope, "--surface", DETACHED_SURFACE, "-i", "--compact", "--include-bounds");
+      const role = scoped.ok ? detachedOverlay(scoped.data) : null;
+      if (role && windowId && outsideWindow(scoped.data, windowId)) {
+        throw Object.assign(new Error(`the ${role} is not in window ${windowId}`), { code: "SURFACE_OUTSIDE_WINDOW" });
+      }
+      if (role) {
+        snap = scoped;
+        surface = role;
+      }
+    }
   }
   const nodes = offerable(collect(snap.data.tree));
   return {

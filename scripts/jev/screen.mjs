@@ -36,6 +36,51 @@ export const overlayRole = (tree) => {
 };
 
 /**
+ * Some modal panels never appear in the window's tree. The macOS open and save
+ * panel that an Electron app such as Obsidian raises is one: the window snapshot
+ * holds no trace of it, `--surface sheet` and `--surface alert` find nothing, yet
+ * `list-surfaces` reports it and `--surface focused` reads it, rooted at a
+ * `dialog`. While it is up, every element of the window behind it is the wrong
+ * target. These checks decide when to look for such a panel and whether the
+ * focused read found one rather than the window itself.
+ */
+export const DETACHED_SURFACE = "focused";
+const DETACHED_ROLES = ["dialog", "sheet", "alert", "popover", "menu"];
+
+/** `list-surfaces` data: true when the app reports any open surface at all. */
+export const surfaceListed = (data) => (data?.surfaces ?? []).length > 0;
+
+/** A `--surface focused` read: the overlay's role when it is rooted at one,
+ *  null when it returned the ordinary window. */
+export const detachedOverlay = (data) =>
+  DETACHED_ROLES.includes(data?.tree?.role) ? data.tree.role : null;
+
+/**
+ * An action can make an app swap its window: Obsidian closes its start window
+ * and opens the vault in a new one. A run pinned with --window-id then reads a
+ * window that is gone (`WINDOW_NOT_FOUND`), or one being torn down
+ * (`ACTION_NOT_SUPPORTED`). Given the app's windows before the action and now,
+ * this says what happened to the pinned one:
+ *   present    it is still there and readable;
+ *   replaced   it is gone and exactly one new window appeared: follow it;
+ *   ambiguous  it is gone and several new windows appeared: do not guess;
+ *   closed     it is gone and nothing new appeared (yet);
+ *   unknown    the window list could not be read.
+ * Only windows absent before the action count as new, so an unrelated window
+ * that was already open is never adopted.
+ */
+export const windowSuccessor = (before, after, pinned) => {
+  if (!Array.isArray(after)) return { state: "unknown" };
+  const live = (w) => w.visible !== false && !w.minimized && w.accessible !== false;
+  if (after.some((w) => w.id === pinned && live(w))) return { state: "present" };
+  const known = new Set((before ?? []).map((w) => w.id));
+  const fresh = after.filter((w) => w.id !== pinned && !known.has(w.id) && live(w));
+  if (fresh.length === 1) return { state: "replaced", id: fresh[0].id, title: fresh[0].title ?? null };
+  if (fresh.length > 1) return { state: "ambiguous", candidates: fresh.map((w) => w.id) };
+  return { state: "closed" };
+};
+
+/**
  * The only elements withheld are ones no command can reach. Everything else is
  * offered: the docs are explicit that a Choice does better with the full list
  * than a shortlist, and an unnamed row is still distinguishable by the value it

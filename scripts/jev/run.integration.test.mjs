@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execute } from "./desktop.mjs";
+import { windowSuccessor } from "./screen.mjs";
 
 const directory = mkdtempSync(join(tmpdir(), "jev-loop-test-"));
 const entry = join(dirname(fileURLToPath(import.meta.url)), "run.mjs");
@@ -22,7 +23,19 @@ const error = (code, retry='unsafe', delivery='delivery_uncertain') =>
   ({ok:false,error:{code,message:'試験の失敗',disposition:{retry,delivery}}});
 let result = {ok:true,data:{disposition:{delivery:'delivered_verified',retry:'unsafe'}}};
 const clicked = () => require('node:fs').readFileSync(process.env.JEV_TEST_LOG,'utf8').includes('"command":"click"');
+const pinnedArg = args.includes('--window-id') ? args[args.indexOf('--window-id') + 1] : null;
+if (command === 'list-windows') {
+  const win = id => ({id,title:'試験',visible:true,minimized:false,accessible:true});
+  const after = {window_closed:[], swap:[win('w-43')], swap_unsupported:[win('w-43')], swap_two:[win('w-43'),win('w-44')],
+    swap_late:[win('w-43')]}[mode];
+  const lists = require('node:fs').readFileSync(process.env.JEV_TEST_LOG,'utf8').split('\\n')
+    .filter(l => l.includes('"command":"list-windows"')).length;
+  const late = mode === 'swap_late' && lists < 4 ? [] : null;
+  result = {ok:true,data: clicked() && after ? (late ?? after) : [win('w-42'), win('w-old')]};
+}
 if (command === 'snapshot' && mode === 'window_closed' && clicked()) result = error('WINDOW_NOT_FOUND','safe','not_delivered');
+else if (command === 'snapshot' && mode.startsWith('swap') && clicked() && pinnedArg === 'w-42')
+  result = mode === 'swap_unsupported' ? error('ACTION_NOT_SUPPORTED','safe','not_delivered') : error('WINDOW_NOT_FOUND','safe','not_delivered');
 else if (command === 'snapshot' && mode === 'closed_top' &&
   require('node:fs').readFileSync(process.env.JEV_TEST_LOG,'utf8').split('\\n').filter(l=>l.includes('"command":"snapshot"')).length >= 3)
   result = error('WINDOW_NOT_FOUND','safe','not_delivered');
@@ -38,15 +51,19 @@ else if (command === 'snapshot') {
   let id = pinned;
   if (surfaced && mode === 'surface_other') id = 'w-other';
   if (rooted && mode === 'root_other') id = 'w-other';
+  if (surfaced && mode === 'detached_other') id = 'w-other';
   const window = surfaced && mode === 'surface_noid' ? {title:'試験'} : {title:'試験',id};
   const sheet = mode.startsWith('surface') && !surfaced ? [{role:'sheet',children:[]}] : [];
+  const detached = surfaced && mode.startsWith('detached') && mode !== 'detached_window';
   result = {ok:true,data:{window,tree:{
-    role:'window',children:[
+    role:detached?'dialog':'window',children:[
       {ref_id:'@s1:e1',role:'button',name:mode==='sequence'&&actions.length>=1?suppliedInputs[1]:'試験ボタン',available_actions:['Click']},
       {ref_id:'@s1:e2',role:'textfield',name:'試験欄',value:process.env.JEV_ACT_TEST?'PRIVATE-ACT-SCREEN-VALUE-4583':mode==='sequence'?written:'',available_actions:['SetValue']},
       ...sheet
     ]}}};
 }
+if (command === 'list-surfaces') result = {ok:true,data:{pid:1,surfaces:mode.startsWith('detached')
+  ? [{id:'focused-window',title:'場所',type:'alert'}] : []}};
 if (command === 'click' && mode === 'click_error') result=error('ACTION_FAILED');
 if (command === 'set-value') result= mode==='unsafe_type'
   ? error('TIMEOUT') : mode==='old_binary'
@@ -67,7 +84,7 @@ if (command === 'get') {
 }
 console.log(JSON.stringify(result));
 `;
-for (const command of ["snapshot", "click", "set-value", "focus", "clipboard-get", "clipboard-set", "press", "get"]) {
+for (const command of ["snapshot", "list-surfaces", "list-windows", "click", "set-value", "focus", "clipboard-get", "clipboard-set", "press", "get"]) {
   writeFileSync(join(directory, command), fake);
 }
 writeFileSync(preload, `
@@ -83,7 +100,7 @@ globalThis.fetch=async (_url,options)=>{
   if (['destructive','risk_safe'].includes(mode)) {
     appendFileSync(process.env.JEV_TEST_LOG,JSON.stringify({command:'goal',args:[body.state.goal]})+'\\n');
   }
-  const operation=['destructive','risk_safe'].includes(mode)?(calls===1?'CLICK':'DONE'):mode==='direct_type'?(calls===1?'TYPE_TEXT':'DONE'):mode==='sequence'?({1:'TYPE_TEXT',2:'CLICK',3:'TYPE_TEXT',4:'CLICK'}[calls]??'DONE'):mode==='wait'?(calls<=3?'WAIT':'DONE'):mode==='closed_top'?'WAIT':(mode==='done'||mode.startsWith('surface')||mode.endsWith('_other'))?'DONE':
+  const operation=['destructive','risk_safe'].includes(mode)||mode.startsWith('swap')?(calls===1?'CLICK':'DONE'):mode==='direct_type'?(calls===1?'TYPE_TEXT':'DONE'):mode==='sequence'?({1:'TYPE_TEXT',2:'CLICK',3:'TYPE_TEXT',4:'CLICK'}[calls]??'DONE'):mode==='wait'?(calls<=3?'WAIT':'DONE'):mode==='closed_top'?'WAIT':(mode==='done'||mode.startsWith('surface')||mode.startsWith('detached')||mode.endsWith('_other'))?'DONE':
     mode==='blocked'?'BLOCKED':mode==='click_error'||mode==='window_closed'?'CLICK':(mode==='paste_correct'||mode==='paste_late')&&calls>1?'DONE':'TYPE_TEXT';
   if (mode==='sequence') appendFileSync(process.env.JEV_TEST_LOG,JSON.stringify({command:'request',body})+'\\n');
   const answers={};
@@ -134,7 +151,7 @@ const run = (mode, extra = [], input = "試験") => {
     cwd: directory,
     encoding: "utf8",
     timeout: 10000,
-    env: { ...process.env, JEV_VERIFY_MS: "600", TYPESAFE_API_KEY: "fixture", AGENT_DESKTOP_BIN: process.execPath,
+    env: { ...process.env, JEV_VERIFY_MS: "600", JEV_WINDOW_FOLLOW_MS: "1500", TYPESAFE_API_KEY: "fixture", AGENT_DESKTOP_BIN: process.execPath,
       JEV_TEST_MODE: mode, JEV_TEST_LOG: log, JEV_TEST_INPUT: inputs[0], JEV_TEST_INPUTS: JSON.stringify(inputs) },
   });
   assert.ifError(result.error);
@@ -292,6 +309,64 @@ try {
     assert.equal(outside.stop.stop, "surface_outside_window", mode);
     assert.equal(outside.commands.some(command => ["click", "set-value", "press"].includes(command.command)), false, mode);
   }
+
+  // A panel outside the window's tree (macOS open/save panel): list-surfaces
+  // reports it and `--surface focused` reads it, rooted at a dialog.
+  const focusedReads = commands => commands.filter(c => c.command === "snapshot" && c.args.includes("--surface"))
+    .map(c => c.args[c.args.indexOf("--surface") + 1]);
+  const detached = run("detached_ok", ["--window-id", "w-42"]);
+  assert.equal(detached.status, 0);
+  assert.equal(detached.stop.screen.surface, "dialog");
+  assert.ok(detached.commands.some(c => c.command === "list-surfaces"), "list-surfaces is asked");
+  assert.ok(focusedReads(detached.commands).every(s => s === "focused") && focusedReads(detached.commands).length > 0);
+  for (const { args } of detached.commands.filter(c => c.args.includes("--surface"))) {
+    assert.deepEqual(args.slice(args.indexOf("--window-id"), args.indexOf("--window-id") + 2), ["--window-id", "w-42"]);
+  }
+  const detachedOther = run("detached_other", ["--window-id", "w-42"]);
+  assert.equal(detachedOther.status, 1);
+  assert.equal(detachedOther.stop.stop, "surface_outside_window");
+  assert.equal(detachedOther.commands.some(c => ["click", "set-value", "press"].includes(c.command)), false);
+  const detachedWindow = run("detached_window", ["--window-id", "w-42"]);
+  assert.equal(detachedWindow.status, 0);
+  assert.equal(detachedWindow.stop.screen.surface, "window", "a focused read of the window itself is not an overlay");
+  const noSurface = run("done", ["--window-id", "w-42"]);
+  assert.equal(focusedReads(noSurface.commands).length, 0, "no surface listed means no extra read");
+  const detachedRooted = run("detached_ok", ["--window-id", "w-42", "--root", "@s1:e1"]);
+  assert.equal(detachedRooted.commands.some(c => c.command === "list-surfaces"), false, "a pinned region skips the probe");
+  const actDetached = act("detached_ok", ["--window-id", "w-42"]);
+  assert.equal(actDetached.out.surface, "dialog");
+  assert.deepEqual(focusedReads(actDetached.commands), ["focused"]);
+
+  // An action that makes the app replace its pinned window (Obsidian opening a vault).
+  const w = (id, extra = {}) => ({ id, title: "t", visible: true, minimized: false, accessible: true, ...extra });
+  assert.deepEqual(windowSuccessor([w("a")], [w("a")], "a"), { state: "present" });
+  assert.deepEqual(windowSuccessor([w("a")], [w("b")], "a"), { state: "replaced", id: "b", title: "t" });
+  assert.deepEqual(windowSuccessor([w("a"), w("b")], [w("b")], "a"), { state: "closed" }, "an old window is never adopted");
+  assert.deepEqual(windowSuccessor([w("a")], [w("b"), w("c")], "a"), { state: "ambiguous", candidates: ["b", "c"] });
+  assert.deepEqual(windowSuccessor([w("a")], [w("a", { accessible: false }), w("b")], "a").state, "replaced",
+    "a window being torn down no longer counts as present");
+  assert.deepEqual(windowSuccessor([w("a")], [w("b", { minimized: true })], "a"), { state: "closed" });
+  assert.deepEqual(windowSuccessor([w("a")], null, "a"), { state: "unknown" });
+
+  for (const mode of ["swap", "swap_unsupported", "swap_late"]) {
+    const swapped = run(mode, ["--window-id", "w-42"]);
+    assert.equal(swapped.status, 0, mode);
+    assert.equal(swapped.stop.stop, "done", mode);
+    const change = swapped.events.find(e => e.window_changed);
+    // The new window's title equals the supplied text here, so it is redacted.
+    assert.deepEqual(change?.window_changed, { from: "w-42", to: "w-43", title: "[redacted]" }, mode);
+    assert.deepEqual(swapped.events.find(e => e.turn).turn.window_changed, { from: "w-42", to: "w-43" }, mode);
+    assert.equal(swapped.stop.screen.window_id, "w-43", mode);
+    assert.ok(swapped.commands.some(c => c.command === "snapshot" && c.args.includes("w-43")), `${mode}: reads the new window`);
+    assert.equal(swapped.commands.filter(c => c.command === "click").length, 1, `${mode}: the action is never repeated`);
+  }
+  const swapTwo = run("swap_two", ["--window-id", "w-42"]);
+  assert.equal(swapTwo.status, 1);
+  assert.equal(swapTwo.stop.stop, "window_ambiguous");
+  assert.deepEqual(swapTwo.stop.candidates, ["w-43", "w-44"]);
+  assert.equal(swapTwo.commands.some(c => c.command === "snapshot" && c.args.includes("w-43")), false);
+  const unpinned = run("done");
+  assert.equal(unpinned.commands.some(c => c.command === "list-windows"), false, "an unpinned run never lists windows");
 
   const rootOutside = run("root_other", ["--window-id", "w-42", "--root", "@s1:e1"]);
   assert.equal(rootOutside.status, 1);

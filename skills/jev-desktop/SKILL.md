@@ -151,7 +151,7 @@ node scripts/jev/act.mjs --app TextEdit --execute \
 | Flag | Meaning |
 | --- | --- |
 | `--app <name>` | Required. |
-| `--window-id <id>` | Read one window of the app, by the id `agent-desktop list-windows --app <name>` reports. Needed only when the app has more than one visible window and none of them is focused, which otherwise fails with `AMBIGUOUS_TARGET`. The run stays on that window: a window the run opens elsewhere is not read. If the window closes after an action, `run.mjs` reports that turn and stops with `window_closed`. A `--root` or an open surface outside the window gives `root_outside_window` or `surface_outside_window` (a stop in `run.mjs`, the `error` in `act.mjs`). Every `run.mjs` stop reports the window it read in `screen.window_id`. `run.mjs` takes it too. |
+| `--window-id <id>` | Read one window of the app, by the id `agent-desktop list-windows --app <name>` reports. Needed only when the app has more than one visible window and none of them is focused, which otherwise fails with `AMBIGUOUS_TARGET`. The run stays on that window: a window the run opens elsewhere is not read. If an action makes the app replace that window, as Obsidian does when it opens a vault, `run.mjs` follows the replacement. It waits up to `JEV_WINDOW_FOLLOW_MS` for one window that was not open before the action, prints a `window_changed` event (`from`, `to`, `title`), drops any `--root`, and continues there. Several new windows stop the run with `window_ambiguous` and list them in `candidates`. No new window stops it with `window_closed`. A window that was already open is never adopted. A `--root` or an open surface outside the window gives `root_outside_window` or `surface_outside_window` (a stop in `run.mjs`, the `error` in `act.mjs`). Every `run.mjs` stop reports the window it read in `screen.window_id`. `run.mjs` takes it too. |
 | `--no-values` | Withhold accessible field values from the decision request. Supported by both scripts; the default includes values. |
 | `--execute` | `act.mjs` only. Run the command when `decision` is `act`. Without it, nothing runs. |
 | `--text "…"` | Text the intent needs. Jev returns choices, never strings. `run.mjs` takes it repeatedly; `act.mjs` takes one value. |
@@ -161,7 +161,8 @@ node scripts/jev/act.mjs --app TextEdit --execute \
 Environment: `TYPESAFE_API_KEY` is required (both scripts fail with
 `TYPESAFE_API_KEY unset`). `TYPESAFE_BASE_URL` and `TYPESAFE_MODEL` are covered
 below. `JEV_VERIFY_MS` sets the paste read-back deadline in ms (default 2000, 0
-to 60000).
+to 60000). `JEV_WINDOW_FOLLOW_MS` sets how long a `--window-id` run waits for a
+replacement window in ms (default 3000, 0 to 60000).
 
 `argv` is the exact agent-desktop command. `double-click` and `hover` carry
 `--headed`; `scroll` always goes down.
@@ -199,7 +200,10 @@ enough to tell a wrong screen from a vague intent.
 - **An open surface wins.** When a sheet, alert, menu or popover is up, the
   script reads the window, then that surface, and offers the surface's elements
   instead of the window's. In the window tree those
-  elements carry `offscreen` and would all be dropped.
+  elements carry `offscreen` and would all be dropped. A panel that is not in
+  the window's tree at all, such as the macOS open or save panel an Electron app
+  raises, is found through `list-surfaces` and read with `--surface focused`.
+  Its elements are offered, and the screen reports the surface as `dialog`.
 - **Disabled, hidden and action-less elements are never offered**, nor a cell
   inside a treeitem (the row beside it acts). Everything else is, including
   unnamed rows: a row is told apart by the value it holds, and a Choice does
