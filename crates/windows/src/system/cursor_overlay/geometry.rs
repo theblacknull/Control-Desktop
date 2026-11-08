@@ -4,9 +4,19 @@
 //! claim like that needs numbers to fail against — core shares the motion,
 //! the style and the label placement, but none of these dimensions. They are
 //! carried across rather than invented, and scaled by the session's style
-//! size so a caller that asks for a larger cursor gets a larger everything.
+//! size so a caller that asks for a larger cursor gets a larger glyph, ripple
+//! and highlight. The label card is the exception, see [`LABEL_SCALE`].
 
 use agent_desktop_core::{Point, Rect};
+
+/// The scale the label card is drawn at, whatever the cursor's size.
+///
+/// The card carries text the user has to read, and the macOS overlay sets it
+/// at its one type size and builds its pill at scale `1.0` while `--size`
+/// scales only the pointer. Scaling the card here as well made a cursor at
+/// `--size 0.5` carry a caption at half its legible size, and made the same
+/// session draw two different cards on the two platforms.
+pub(crate) const LABEL_SCALE: f64 = 1.0;
 
 /// The cursor glyph's box, and the four-point dart drawn inside it, with the
 /// tip at the first point — which is what the pose's position names.

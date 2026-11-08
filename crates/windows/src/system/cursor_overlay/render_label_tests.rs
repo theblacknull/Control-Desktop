@@ -93,6 +93,28 @@ fn a_label_near_the_screen_edge_stays_on_screen() {
     );
 }
 
+/// `--size` scales the pointer, not the caption: a smaller cursor carries the
+/// same card, shadow and text rectangle as the default one.
+#[test]
+fn the_card_keeps_its_size_when_the_cursor_is_smaller() {
+    let default = CursorOverlayStyle::default();
+    let mut small = CursorOverlayStyle::default();
+    small.set_size(0.5);
+
+    let at_default = compose(&frame(&default, Some(pill(80.0))));
+    let at_small = compose(&frame(&small, Some(pill(80.0))));
+
+    let size = |rect: agent_desktop_core::Rect| (rect.width, rect.height);
+    assert_eq!(
+        size(at_small.card_rect.expect("a card")),
+        size(at_default.card_rect.expect("a card"))
+    );
+    assert_eq!(
+        size(at_small.text_rect.expect("a text rectangle")),
+        size(at_default.text_rect.expect("a text rectangle"))
+    );
+}
+
 /// A label wider than the screen is clamped with its pill, so the text and
 /// its ellipsis stay inside the pill rather than running past its end.
 #[test]

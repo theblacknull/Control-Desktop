@@ -51,8 +51,12 @@ pub(crate) fn compose(frame: &Frame<'_>) -> Composed {
     let label_rect = frame
         .label
         .map(|pill| place_label(&frame.tip, pill.size(), &frame.screen));
-    let card_bounds = label_rect
-        .map(|rect| geometry::union_of(&rect, &geometry::label_shadow_rect(&rect, scale)));
+    let card_bounds = label_rect.map(|rect| {
+        geometry::union_of(
+            &rect,
+            &geometry::label_shadow_rect(&rect, geometry::LABEL_SCALE),
+        )
+    });
     let highlighted = frame
         .target
         .as_ref()
@@ -108,10 +112,10 @@ pub(crate) fn compose(frame: &Frame<'_>) -> Composed {
     let card_rect = card_bounds.map(|card| mapping.to_local(&card));
     let text_rect = label_rect.zip(frame.label).map(|(rect, pill)| {
         let local = mapping.to_local(&rect);
-        rounded::draw_label_pill(&mut surface, &local, scale);
+        rounded::draw_label_pill(&mut surface, &local, geometry::LABEL_SCALE);
         let line = pill
             .within(local.width)
-            .text_frame(local.height - TEXT_VERTICAL_INSET * 2.0 * scale);
+            .text_frame(local.height - TEXT_VERTICAL_INSET * 2.0 * geometry::LABEL_SCALE);
         Rect {
             x: local.x + line.x,
             y: local.y + line.y,

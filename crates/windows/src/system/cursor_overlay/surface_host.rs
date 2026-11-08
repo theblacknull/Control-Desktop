@@ -17,8 +17,8 @@
 use super::presentation::{Presentation, RestState};
 #[cfg(target_os = "windows")]
 use crate::system::cursor_overlay::{
-    animation, caret_mark::CaretMark, fade, label, monitors, render, reveal::Reveal, schedule,
-    session_state, text, topology::DisplayTopology, window::OverlayWindow,
+    animation, caret_mark::CaretMark, fade, geometry, label, monitors, render, reveal::Reveal,
+    schedule, session_state, text, topology::DisplayTopology, window::OverlayWindow,
 };
 #[cfg(target_os = "windows")]
 use agent_desktop_core::{
@@ -273,7 +273,7 @@ impl SurfaceHost {
                 &text_rect,
                 label,
                 [1.0, 1.0, 1.0],
-                LABEL_FONT_POINTS * self.presentation.style.size(),
+                LABEL_FONT_POINTS * geometry::LABEL_SCALE,
             );
         }
         if let Some(card) = composed.card_rect {

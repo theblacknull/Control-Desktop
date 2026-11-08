@@ -9,6 +9,7 @@ pub(crate) use imp::{Presentation, RestState};
 
 #[cfg(target_os = "windows")]
 mod imp {
+    use crate::system::cursor_overlay::geometry::LABEL_SCALE;
     use crate::system::cursor_overlay::reveal::Reveal;
     use agent_desktop_core::{
         CursorOverlayControl, CursorOverlayStyle, LABEL_FONT_POINTS, LabelPill, Point,
@@ -60,16 +61,15 @@ mod imp {
             self.pointing = std::mem::take(&mut self.arrives_pointing);
         }
 
-        /// The label's pill, sized to the text as it is set at this size, or
-        /// nothing when there is no label or it cannot be measured.
+        /// The label's pill, sized to the text as it is set at the label's own
+        /// scale, or nothing when there is no label or it cannot be measured.
         pub(crate) fn label_pill(&self) -> Option<LabelPill> {
             let label = self.label.as_deref()?;
-            let scale = self.style.size();
             let width = crate::system::cursor_overlay::text::measure_label(
                 label,
-                LABEL_FONT_POINTS * scale,
+                LABEL_FONT_POINTS * LABEL_SCALE,
             )?;
-            LabelPill::for_label(label, width, scale)
+            LabelPill::for_label(label, width, LABEL_SCALE)
         }
 
         /// The style a frame is drawn with: the session's own, with the
