@@ -18,7 +18,9 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { collect, describe, label, offerable, outsideWindow, overlayRole } from "./screen.mjs";
+import {
+  collect, describe, DETACHED_SURFACE, detachedOverlay, label, offerable, outsideWindow, overlayRole, surfaceListed,
+} from "./screen.mjs";
 import { NO_MATCH, resolveModel, typesafeApi, route } from "./policy.mjs";
 
 export { collect, describe, label, offerable, overlayRole, route };
@@ -240,13 +242,26 @@ const main = async (argv) => {
     fail("root_outside_window", { detail: `the region is not in window ${windowId}` });
   }
 
-  const overlay = overlayRole(snap.data.tree);
+  let overlay = overlayRole(snap.data.tree);
   if (overlay && !root) {
     const surfaceSnap = run(bin, ["snapshot", ...scope, "--surface", overlay, "-i", "--compact", "--include-bounds"]);
     if (surfaceSnap.ok && windowId && outsideWindow(surfaceSnap.data, windowId)) {
       fail("surface_outside_window", { detail: `the ${overlay} is not in window ${windowId}` });
     }
     if (surfaceSnap.ok) snap = surfaceSnap;
+  } else if (!overlay && !root) {
+    const listed = run(bin, ["list-surfaces", "--app", app]);
+    if (listed.ok && surfaceListed(listed.data)) {
+      const surfaceSnap = run(bin, ["snapshot", ...scope, "--surface", DETACHED_SURFACE, "-i", "--compact", "--include-bounds"]);
+      const role = surfaceSnap.ok ? detachedOverlay(surfaceSnap.data) : null;
+      if (role && windowId && outsideWindow(surfaceSnap.data, windowId)) {
+        fail("surface_outside_window", { detail: `the ${role} is not in window ${windowId}` });
+      }
+      if (role) {
+        snap = surfaceSnap;
+        overlay = role;
+      }
+    }
   }
 
   const surface = {
