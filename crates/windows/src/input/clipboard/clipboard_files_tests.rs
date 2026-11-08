@@ -131,3 +131,167 @@ fn a_path_list_over_the_total_text_budget_is_rejected_on_read() {
         error.message
     );
 }
+
+fn hdrop_payload(units: &[u16]) -> Vec<u8> {
+    let mut payload = vec![0; 20];
+    payload[0..4].copy_from_slice(&20u32.to_le_bytes());
+    payload[16..20].copy_from_slice(&1i32.to_le_bytes());
+    payload.extend(utf16_le(units));
+    payload
+}
+
+fn logical_list_payload() -> Vec<u8> {
+    let mut units = path_units("C:\\a.txt");
+    units.extend([0, 0]);
+    hdrop_payload(&units)
+}
+
+#[test]
+fn logical_list_with_zero_allocation_tail() {
+    let mut payload = logical_list_payload();
+    payload.extend([0; 8]);
+    assert_eq!(decode_hdrop(&payload).unwrap(), ["C:\\a.txt"]);
+}
+
+#[test]
+fn logical_list_with_nonzero_allocation_tail() {
+    let mut payload = logical_list_payload();
+    payload.extend([0x00, 0xd8, 0x55, 0xaa]);
+    assert_eq!(decode_hdrop(&payload).unwrap(), ["C:\\a.txt"]);
+}
+
+#[test]
+fn logical_list_with_odd_allocation_tail() {
+    let mut payload = logical_list_payload();
+    payload.push(0xff);
+    assert_eq!(decode_hdrop(&payload).unwrap(), ["C:\\a.txt"]);
+}
+
+#[test]
+fn empty_list_ignores_allocation_tail() {
+    for tail in [&[0x55, 0xaa][..], &[0xff][..]] {
+        let mut payload = hdrop_payload(&[0, 0]);
+        payload.extend_from_slice(tail);
+        assert!(decode_hdrop(&payload).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn first_double_nul_ends_the_list_before_later_terminators() {
+    let mut payload = logical_list_payload();
+    payload.extend(utf16_le(&[0xd800, 0, 0, 0x61, 0, 0]));
+    assert_eq!(decode_hdrop(&payload).unwrap(), ["C:\\a.txt"]);
+}
+
+#[test]
+fn malformed_prefix_is_not_hidden_by_a_terminator_and_tail() {
+    let mut payload = hdrop_payload(&[0, 0x61, 0, 0]);
+    payload.extend([0x55, 0xaa]);
+    let error = decode_hdrop(&payload).expect_err("empty leading entry");
+    assert_eq!(error.code, ErrorCode::ActionFailed);
+    assert!(error.message.contains("entry is empty"));
+}
+
+#[test]
+fn incomplete_or_unaligned_terminators_are_rejected() {
+    let lists = [
+        vec![],
+        vec![0],
+        utf16_le(&[0]),
+        utf16_le(&[0x61]),
+        utf16_le(&[0x61, 0]),
+        vec![0x61, 0, 0, 0, 0],
+        utf16_le(&[0x0001, 0, 0x0100]),
+    ];
+    for list in lists {
+        let mut payload = hdrop_payload(&[]);
+        payload.extend(list);
+        let error = decode_hdrop(&payload).expect_err("no complete wide double-NUL");
+        assert_eq!(error.code, ErrorCode::ActionFailed);
+    }
+}
+
+#[test]
+fn pfiles_offset_selects_the_list_before_padding_is_ignored() {
+    for offset in [21u32, 24] {
+        let mut payload = hdrop_payload(&[]);
+        payload[0..4].copy_from_slice(&offset.to_le_bytes());
+        payload.resize(offset as usize, 0xa5);
+        payload.extend(utf16_le(&[0x61, 0, 0]));
+        payload.push(0xff);
+        assert_eq!(decode_hdrop(&payload).unwrap(), ["a"]);
+    }
+    for offset in [0u32, 19, 25, u32::MAX] {
+        let mut payload = hdrop_payload(&[0, 0]);
+        payload[0..4].copy_from_slice(&offset.to_le_bytes());
+        let error = decode_hdrop(&payload).expect_err("pFiles out of range");
+        assert_eq!(error.code, ErrorCode::ActionFailed);
+    }
+}
+
+#[test]
+fn lossy_unicode_before_terminator_is_preserved() {
+    let mut payload = hdrop_payload(&[0xd800, 0x61, 0, 0]);
+    payload.extend([0x55, 0xaa]);
+    assert_eq!(decode_hdrop(&payload).unwrap(), ["\u{fffd}a"]);
+}
+
+#[test]
+fn allocation_tail_does_not_relax_path_length_budget() {
+    for length in [16_384, 16_385] {
+        let mut units = vec![0x61; length];
+        units.extend([0, 0]);
+        let mut payload = hdrop_payload(&units);
+        payload.extend([0x55, 0xaa]);
+        let result = decode_hdrop(&payload);
+        if length == 16_384 {
+            assert_eq!(result.unwrap(), ["a".repeat(length)]);
+        } else {
+            let error = result.expect_err("path length budget");
+            assert_eq!(error.code, ErrorCode::ActionFailed);
+            assert!(error.message.contains("length budget"));
+        }
+    }
+}
+
+#[test]
+fn allocation_tail_does_not_relax_path_count_budget() {
+    for count in [1_024, 1_025] {
+        let mut units = [0x61, 0].repeat(count);
+        units.push(0);
+        let mut payload = hdrop_payload(&units);
+        payload.extend([0x55, 0xaa]);
+        let result = decode_hdrop(&payload);
+        if count == 1_024 {
+            assert_eq!(result.unwrap(), vec!["a"; count]);
+        } else {
+            let error = result.expect_err("path count budget");
+            assert_eq!(error.code, ErrorCode::ActionFailed);
+            assert!(error.message.contains("entry budget"));
+        }
+    }
+}
+
+#[test]
+fn allocation_tail_does_not_relax_total_text_budget() {
+    for extra in [0, 1] {
+        let mut path = vec![0x61; 1_000];
+        path.push(0);
+        let mut units = path.repeat(1_000);
+        units.extend(vec![0x61; extra]);
+        if extra != 0 {
+            units.push(0);
+        }
+        units.push(0);
+        let mut payload = hdrop_payload(&units);
+        payload.extend([0x55, 0xaa]);
+        let result = decode_hdrop(&payload);
+        if extra == 0 {
+            assert_eq!(result.unwrap(), vec!["a".repeat(1_000); 1_000]);
+        } else {
+            let error = result.expect_err("aggregate text budget");
+            assert_eq!(error.code, ErrorCode::ActionFailed);
+            assert!(error.message.contains("total text budget"));
+        }
+    }
+}

@@ -85,22 +85,18 @@ pub(crate) fn encode_hdrop(paths: &[String]) -> Result<Vec<u8>, AdapterError> {
 }
 
 fn decode_wide_paths(list: &[u8]) -> Result<Vec<String>, AdapterError> {
-    if !list.len().is_multiple_of(2) {
-        return Err(payload_error(
-            "CF_HDROP wide path list length is not a whole number of UTF-16 units",
-        ));
-    }
-    if list.len() < 4 {
-        return Err(payload_error(
-            "CF_HDROP wide path list is missing the double-NUL terminator",
-        ));
-    }
-    let units: Vec<u16> = read_utf16_units(list);
-    if units.len() < 2 || units[units.len() - 1] != 0 || units[units.len() - 2] != 0 {
+    let units = read_utf16_units(list);
+    let Some(terminator) = units.windows(2).position(|pair| pair == [0, 0]) else {
+        if !list.len().is_multiple_of(2) {
+            return Err(payload_error(
+                "CF_HDROP wide path list length is not a whole number of UTF-16 units",
+            ));
+        }
         return Err(payload_error(
             "CF_HDROP wide path list is missing the double-NUL terminator",
         ));
-    }
+    };
+    let units = &units[..terminator + 2];
 
     let mut paths = Vec::new();
     let mut total_units = 0_usize;
