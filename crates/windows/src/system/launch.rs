@@ -38,6 +38,10 @@ pub(crate) fn launch_app_impl(
     }
     let (pid, token) = create_process(&executable, options, deadline)?;
     let window = observe_window(pid, &token, options, deadline)?;
+    #[cfg(target_os = "windows")]
+    if let Some(window) = window.as_ref().filter(|_| !options.activate) {
+        launch_background::send_to_back(window).map_err(after_launch)?;
+    }
     Ok(launch_result(id, pid, token, window))
 }
 
@@ -182,7 +186,8 @@ fn create_process(
 ) -> Result<(ProcessId, String), AdapterError> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::{
-        CREATE_UNICODE_ENVIRONMENT, CreateProcessW, PROCESS_INFORMATION, STARTUPINFOW,
+        CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, EXTENDED_STARTUPINFO_PRESENT,
+        PROCESS_INFORMATION, STARTUPINFOEXW,
     };
 
     deadline.ensure_remaining().map_err(before_launch)?;
@@ -198,16 +203,26 @@ fn create_process(
         crate::system::interaction_lease::INTERACTION_LEASE_HANDLE_ENV,
     )
     .map_err(before_launch)?;
-    let startup = STARTUPINFOW {
-        cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-        ..Default::default()
+    let shell_parent = if options.activate {
+        None
+    } else {
+        Some(launch_background::ShellParent::open().map_err(before_launch)?)
     };
-    let mut information = PROCESS_INFORMATION::default();
-    let flags = if env_block.is_some() {
+    let mut startup = STARTUPINFOEXW {
+        StartupInfo: launch_background::startup_info(options.activate),
+        lpAttributeList: std::ptr::null_mut(),
+    };
+    let mut flags = if env_block.is_some() {
         CREATE_UNICODE_ENVIRONMENT
     } else {
         0
     };
+    if let Some(parent) = &shell_parent {
+        startup.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
+        startup.lpAttributeList = parent.attribute_list();
+        flags |= EXTENDED_STARTUPINFO_PRESENT | CREATE_NO_WINDOW;
+    }
+    let mut information = PROCESS_INFORMATION::default();
     let env_ptr = env_block
         .as_ref()
         .map(|block| block.as_ptr().cast())
@@ -227,10 +242,11 @@ fn create_process(
             flags,
             env_ptr,
             cwd_ptr,
-            &startup,
+            &startup.StartupInfo,
             &mut information,
         )
     };
+    drop(shell_parent);
     if ok == 0 {
         return Err(before_launch(win32_last_error(
             "CreateProcessW failed to start the application",
@@ -377,3 +393,7 @@ mod launch_lease_isolation_tests;
 
 #[path = "launch_attach.rs"]
 pub(crate) mod launch_attach;
+
+#[cfg(target_os = "windows")]
+#[path = "launch_background.rs"]
+mod launch_background;
