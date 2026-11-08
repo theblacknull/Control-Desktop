@@ -161,6 +161,24 @@ mod windows_only {
         );
     }
 
+    /// A headless control-pattern action must not let UI Automation focus its
+    /// element, and with it the element's window, on its own.
+    #[test]
+    fn the_shipped_client_disables_automatic_focus_before_returning_elements() {
+        use windows::core::Interface;
+        bootstrap();
+
+        let client = automation_client().expect("the client builds");
+        let raw: &windows::Win32::UI::Accessibility::IUIAutomation = client.as_ref();
+        let client2: windows::Win32::UI::Accessibility::IUIAutomation2 =
+            raw.cast().expect("the shipped client is IUIAutomation2");
+        let auto_set_focus = unsafe { client2.AutoSetFocus() }.expect("AutoSetFocus reads");
+        assert!(
+            !auto_set_focus.as_bool(),
+            "semantic actions must not implicitly focus the target"
+        );
+    }
+
     #[test]
     fn a_hresult_error_splits_onto_the_result_branch() {
         let error = UiaError::from(windows::core::HRESULT(E_ACCESSDENIED_HRESULT));

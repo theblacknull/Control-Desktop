@@ -187,6 +187,14 @@ mod imp {
     /// present on both build 17763 and the Server 2025 CI image. A client
     /// whose calls cannot be bounded is one this crate should refuse, not one
     /// it should quietly accept.
+    ///
+    /// `AutoSetFocus` is turned off on the same client. UI Automation defaults
+    /// it to TRUE, which lets control-pattern calls such as `Invoke`,
+    /// `SetValue` and `Toggle` focus their element first, and focusing an
+    /// element in a background window activates that window. A headless action
+    /// promises not to take the user's focus; the headed path, which does want
+    /// focus, calls `SetFocus` itself and is unaffected. A client that refuses
+    /// the setting is reported like any other UIA failure rather than used.
     fn create_bounded_client() -> Result<UIAutomation, AdapterError> {
         let client: IUIAutomation2 = unsafe { CoCreateInstance(&CUIAutomation8, None, CLSCTX_ALL) }
             .map_err(|error| unbounded_client_error(error.code().0))?;
@@ -197,6 +205,12 @@ mod imp {
             client
                 .SetTransactionTimeout(super::TRANSACTION_TIMEOUT_MS)
                 .map_err(|error| unbounded_client_error(error.code().0))?;
+            client.SetAutoSetFocus(false).map_err(|error| {
+                uia_failure_error(
+                    UiaFailure::Hresult(error.code().0),
+                    "disable automatic UI Automation focus changes",
+                )
+            })?;
         }
         let automation: IUIAutomation = client.into();
         Ok(UIAutomation::from(automation))
